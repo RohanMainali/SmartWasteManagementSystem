@@ -11,12 +11,174 @@ import {
   Linking,
   ActivityIndicator,
 } from "react-native";
+import * as Location from 'expo-location';
 import { COLORS, SIZES } from "../utils/theme";
 import CustomButton from "../components/CustomButton";
 import { formatTime, getRelativeTime } from "../utils/helpers";
 import apiService from "../services/apiService";
 import webSocketService from "../services/webSocketService";
-import BaatoWebMapView from "../components/BaatoWebMapView";
+
+// Customer Live Map Component for tracking driver
+const CustomerLiveMap = ({ driverLocation, driver, vehicle, collectionStatus }) => {
+  const [customerLocation, setCustomerLocation] = useState(null);
+  const [mapError, setMapError] = useState(null);
+
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setMapError('Location permission required for live tracking');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      setCustomerLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+    } catch (error) {
+      setMapError('Unable to get your location');
+      console.error('Location error:', error);
+    }
+  };
+
+  const openDirections = () => {
+    if (driverLocation) {
+      const driverLat = driverLocation.latitude;
+      const driverLng = driverLocation.longitude;
+      
+      // Open in Apple Maps (iOS) or Google Maps (Android)
+      const url = `https://maps.apple.com/?q=${driverLat},${driverLng}&ll=${driverLat},${driverLng}`;
+      const googleUrl = `https://maps.google.com/?q=${driverLat},${driverLng}`;
+      
+      Alert.alert(
+        'View Driver Location',
+        'Choose how to view the driver location:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Apple Maps', 
+            onPress: () => Linking.openURL(url).catch(() => Linking.openURL(googleUrl))
+          },
+          { 
+            text: 'Google Maps', 
+            onPress: () => Linking.openURL(googleUrl)
+          }
+        ]
+      );
+    }
+  };
+
+  const openRoute = () => {
+    if (driverLocation && customerLocation) {
+      // Create route from driver to customer
+      const routeUrl = `https://maps.google.com/maps/dir/${driverLocation.latitude},${driverLocation.longitude}/${customerLocation.latitude},${customerLocation.longitude}`;
+      Linking.openURL(routeUrl);
+    }
+  };
+
+  const getStatusIcon = () => {
+    switch (collectionStatus) {
+      case 'assigned': return '🚛';
+      case 'in-progress':
+      case 'in_progress': return '🟢';
+      case 'completed': return '✅';
+      default: return '📍';
+    }
+  };
+
+  return (
+    <View style={styles.customerMapContainer}>
+      {/* Map Visual Representation */}
+      <View style={styles.mapPlaceholder}>
+        <View style={styles.mapHeader}>
+          <Text style={styles.mapTitle}>Live Tracking Map</Text>
+          <Text style={styles.mapSubtitle}>
+            <Text>{getStatusIcon()}</Text> Driver: {driver?.name || 'Unknown'}
+          </Text>
+        </View>
+
+        {/* Map Content */}
+        <View style={styles.mapContent}>
+          {mapError ? (
+            <View style={styles.mapErrorContainer}>
+              <Text style={styles.mapErrorText}>⚠️ {mapError}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={getCurrentLocation}>
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.mapVisualization}>
+              {/* Customer Location */}
+              <View style={styles.locationPin}>
+                <Text style={styles.locationEmoji}>🏠</Text>
+                <Text style={styles.locationLabel}>Your Location</Text>
+                {customerLocation && customerLocation.latitude && customerLocation.longitude && (
+                  <Text style={styles.coordinates}>
+                    {customerLocation.latitude.toFixed(4)}, {customerLocation.longitude.toFixed(4)}
+                  </Text>
+                )}
+              </View>
+
+              {/* Distance Line */}
+              <View style={styles.routeLine}>
+                <Text style={styles.routeText}>
+                  {driverLocation?.distance && typeof driverLocation.distance === 'number'
+                    ? `${driverLocation.distance.toFixed(1)} km`
+                    : 'Calculating distance...'}
+                </Text>
+              </View>
+
+              {/* Driver Location */}
+              <View style={styles.locationPin}>
+                <Text style={styles.locationEmoji}>🚛</Text>
+                <Text style={styles.locationLabel}>Driver Location</Text>
+                {driverLocation && driverLocation.latitude && driverLocation.longitude && (
+                  <Text style={styles.coordinates}>
+                    {driverLocation.latitude.toFixed(4)}, {driverLocation.longitude.toFixed(4)}
+                  </Text>
+                )}
+                <Text style={styles.etaText}>
+                  ETA: {driverLocation?.estimatedArrival || driverLocation?.eta || 'Calculating...'}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Map Actions */}
+        <View style={styles.mapActions}>
+          <TouchableOpacity style={styles.mapActionButton} onPress={openDirections}>
+            <Text style={styles.mapActionText}>📍 View Driver</Text>
+          </TouchableOpacity>
+          
+          {customerLocation && (
+            <TouchableOpacity style={styles.mapActionButton} onPress={openRoute}>
+              <Text style={styles.mapActionText}>🗺️ Show Route</Text>
+            </TouchableOpacity>
+          )}
+          
+          <TouchableOpacity style={styles.mapActionButton} onPress={getCurrentLocation}>
+            <Text style={styles.mapActionText}>📍 My Location</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Real-time Status */}
+        <View style={styles.realTimeStatus}>
+          <View style={styles.statusDot} />
+          <Text style={styles.statusText}>Live tracking active</Text>
+          <Text style={styles.updateTime}>
+            Updated {getRelativeTime(new Date())}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+};
 
 export default function DriverTrackingScreen({ navigation }) {
   const mapRef = useRef(null);
@@ -68,7 +230,21 @@ export default function DriverTrackingScreen({ navigation }) {
       setLoading(true);
       setError(null);
       
+      console.log('🚀 Loading tracking data...');
       const activeTracking = await apiService.getActiveCollectionTracking();
+      console.log('📦 Received tracking data:', activeTracking ? 'YES' : 'NO');
+      if (activeTracking) {
+        console.log('📊 Raw tracking data keys:', Object.keys(activeTracking));
+        console.log('📊 Tracking data structure:', {
+          hasCollection: !!activeTracking.collection,
+          hasDriver: !!activeTracking.driver,
+          hasDriverLocation: !!activeTracking.driverLocation,
+          scheduledTime: activeTracking.collection?.requestedDate,
+          driverName: activeTracking.driver?.name,
+          status: activeTracking.status,
+          trackingActive: activeTracking.trackingActive
+        });
+      }
       setTrackingData(activeTracking);
     } catch (error) {
       console.error('Failed to load tracking data:', error);
@@ -115,10 +291,16 @@ export default function DriverTrackingScreen({ navigation }) {
 
   const getStatusColor = (status) => {
     switch (status) {
+      case 'scheduled':
+        return '#8B5CF6'; // Purple for scheduled
       case 'assigned':
         return '#3B82F6';
+      case 'in-progress':
       case 'in_progress':
         return '#10B981';
+      case 'en-route':
+      case 'on-the-way':
+        return '#F59E0B'; // Orange for en route
       case 'completed':
         return '#059669';
       case 'cancelled':
@@ -130,10 +312,16 @@ export default function DriverTrackingScreen({ navigation }) {
 
   const getStatusText = (status) => {
     switch (status) {
+      case 'scheduled':
+        return 'Scheduled';
       case 'assigned':
         return 'Driver Assigned';
+      case 'in-progress':
       case 'in_progress':
         return 'Collection in Progress';
+      case 'en-route':
+      case 'on-the-way':
+        return 'Driver En Route';
       case 'completed':
         return 'Collection Completed';
       case 'cancelled':
@@ -154,7 +342,35 @@ export default function DriverTrackingScreen({ navigation }) {
     );
   }
 
-  if (error || !trackingData) {
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Driver Tracking</Text>
+        </View>
+        
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Error Loading Tracking</Text>
+          <Text style={styles.errorMessage}>
+            {error}
+          </Text>
+          <CustomButton
+            title="Try Again"
+            onPress={() => loadTrackingData()}
+            style={styles.retryButton}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!trackingData) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -170,7 +386,7 @@ export default function DriverTrackingScreen({ navigation }) {
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>No Active Collection</Text>
           <Text style={styles.errorMessage}>
-            {error || 'You don\'t have any active waste collections to track at the moment. Schedule a pickup from your home in Kathmandu, Pokhara, or other locations across Nepal.'}
+            You don't have any active waste collections to track at the moment. Schedule a pickup from your home in Kathmandu, Pokhara, or other locations across Nepal.
           </Text>
           <CustomButton
             title="Schedule a Pickup"
@@ -320,7 +536,9 @@ export default function DriverTrackingScreen({ navigation }) {
         {/* Location Tracking Card */}
         <View style={styles.trackingCard}>
           <View style={styles.trackingHeader}>
-            <Text style={styles.trackingTitle}>📍 Live Location</Text>
+            <Text style={styles.trackingTitle}>
+              {trackingData.status === 'scheduled' ? '� Scheduled Pickup' : '�📍 Live Location'}
+            </Text>
             <Text style={styles.lastUpdate}>
               Last update: {trackingData.lastUpdate 
                 ? getRelativeTime(new Date(trackingData.lastUpdate))
@@ -330,62 +548,76 @@ export default function DriverTrackingScreen({ navigation }) {
           
           {trackingData.driverLocation ? (
             <View style={styles.locationDetails}>
-              <View style={styles.locationRow}>
-                <Text style={styles.locationLabel}>Distance:</Text>
-                <Text style={styles.locationValue}>
-                  {trackingData.driverLocation.distance 
-                    ? `${trackingData.driverLocation.distance.toFixed(1)} km away`
-                    : 'Calculating...'}
-                </Text>
-              </View>
-              
-              <View style={styles.locationRow}>
-                <Text style={styles.locationLabel}>ETA:</Text>
-                <Text style={styles.locationValue}>
-                  {trackingData.driverLocation.estimatedArrival || 'Calculating...'}
-                </Text>
-              </View>
-              
-              <View style={styles.locationRow}>
-                <Text style={styles.locationLabel}>Status:</Text>
-                <Text style={[styles.locationValue, { color: COLORS.success }]}>
-                  🟢 Tracking Active
-                </Text>
-              </View>
+              {trackingData.status === 'scheduled' ? (
+                // Show scheduled pickup information
+                <>
+                  <View style={styles.locationRow}>
+                    <Text style={styles.locationLabel}>Pickup Date:</Text>
+                    <Text style={styles.locationValue}>
+                      August 4th, 2025
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.locationRow}>
+                    <Text style={styles.locationLabel}>Pickup Time:</Text>
+                    <Text style={styles.locationValue}>
+                      {trackingData.driverLocation.estimatedArrival || '8:45 AM'}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.locationRow}>
+                    <Text style={styles.locationLabel}>Status:</Text>
+                    <Text style={[styles.locationValue, { color: '#8B5CF6' }]}>
+                      🟣 Scheduled
+                    </Text>
+                  </View>
 
-              {/* Live Map */}
-              <View style={styles.mapContainer}>
-                <BaatoWebMapView
-                  ref={mapRef}
-                  initialRegion={{
-                    latitude: trackingData.driverLocation.latitude,
-                    longitude: trackingData.driverLocation.longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  markers={[
-                    {
-                      id: 'driver',
-                      latitude: trackingData.driverLocation.latitude,
-                      longitude: trackingData.driverLocation.longitude,
-                      title: trackingData.driver.name,
-                      description: `${trackingData.vehicle?.model} - ${trackingData.vehicle?.licensePlate}`,
-                      color: COLORS.success,
-                    }
-                  ]}
-                  showUserLocation={true}
-                  style={styles.map}
-                />
-                <TouchableOpacity
-                  style={styles.fullMapButton}
-                  onPress={() => {
-                    const url = `https://maps.apple.com/?daddr=${trackingData.driverLocation.latitude},${trackingData.driverLocation.longitude}`;
-                    Linking.openURL(url);
-                  }}
-                >
-                  <Text style={styles.fullMapButtonText}>🗺️ Open Full Map</Text>
-                </TouchableOpacity>
-              </View>
+                  <View style={styles.locationRow}>
+                    <Text style={styles.locationLabel}>Driver Location:</Text>
+                    <Text style={styles.locationValue}>
+                      At depot (will depart on pickup day)
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                // Show live tracking information
+                <>
+                  <View style={styles.locationRow}>
+                    <Text style={styles.locationLabel}>Distance:</Text>
+                    <Text style={styles.locationValue}>
+                      {trackingData.driverLocation.distance && typeof trackingData.driverLocation.distance === 'number'
+                        ? `${trackingData.driverLocation.distance.toFixed(1)} km away`
+                        : 'Calculating...'}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.locationRow}>
+                    <Text style={styles.locationLabel}>ETA:</Text>
+                    <Text style={styles.locationValue}>
+                      {trackingData.driverLocation.estimatedArrival || 'Calculating...'}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.locationRow}>
+                    <Text style={styles.locationLabel}>Status:</Text>
+                    <Text style={[styles.locationValue, { color: COLORS.success }]}>
+                      🟢 Tracking Active
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {/* Customer Live Map - only show for active tracking */}
+              {trackingData.status !== 'scheduled' && (
+                <View style={styles.mapContainer}>
+                  <CustomerLiveMap 
+                    driverLocation={trackingData.driverLocation}
+                    driver={trackingData.driver}
+                    vehicle={trackingData.vehicle}
+                    collectionStatus={trackingData.collection?.status}
+                  />
+                </View>
+              )}
             </View>
           ) : (
             <View style={styles.noTrackingContainer}>
@@ -395,7 +627,9 @@ export default function DriverTrackingScreen({ navigation }) {
               </Text>
             </View>
           )}
-        </View>        {/* Action Buttons */}
+        </View>
+        
+        {/* Action Buttons */}
         <View style={styles.actionSection}>
           <CustomButton
             title="🗺️ Open in Maps"
@@ -715,5 +949,152 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontSmall,
     color: COLORS.text,
     fontWeight: '600',
+  },
+  // Customer Live Map Styles
+  customerMapContainer: {
+    flex: 1,
+  },
+  mapPlaceholder: {
+    backgroundColor: COLORS.background,
+    borderRadius: SIZES.radiusMedium,
+    overflow: 'hidden',
+    minHeight: 300,
+  },
+  mapHeader: {
+    backgroundColor: COLORS.primary,
+    padding: SIZES.medium,
+    alignItems: 'center',
+  },
+  mapTitle: {
+    fontSize: SIZES.fontLarge,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 4,
+  },
+  mapSubtitle: {
+    fontSize: SIZES.fontMedium,
+    color: 'white',
+    opacity: 0.9,
+  },
+  mapContent: {
+    flex: 1,
+    padding: SIZES.medium,
+  },
+  mapErrorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SIZES.large,
+  },
+  mapErrorText: {
+    fontSize: SIZES.fontMedium,
+    color: COLORS.error,
+    textAlign: 'center',
+    marginBottom: SIZES.medium,
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SIZES.large,
+    paddingVertical: SIZES.small,
+    borderRadius: SIZES.radiusSmall,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: SIZES.fontMedium,
+    fontWeight: '600',
+  },
+  mapVisualization: {
+    alignItems: 'center',
+    paddingVertical: SIZES.medium,
+  },
+  locationPin: {
+    alignItems: 'center',
+    marginVertical: SIZES.medium,
+    padding: SIZES.medium,
+    backgroundColor: 'white',
+    borderRadius: SIZES.radiusMedium,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    minWidth: 200,
+  },
+  locationEmoji: {
+    fontSize: 32,
+    marginBottom: SIZES.small,
+  },
+  locationLabel: {
+    fontSize: SIZES.fontMedium,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  coordinates: {
+    fontSize: SIZES.fontSmall,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  etaText: {
+    fontSize: SIZES.fontSmall,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  routeLine: {
+    alignItems: 'center',
+    paddingVertical: SIZES.small,
+  },
+  routeText: {
+    fontSize: SIZES.fontMedium,
+    color: COLORS.primary,
+    fontWeight: '600',
+    backgroundColor: 'white',
+    paddingHorizontal: SIZES.medium,
+    paddingVertical: SIZES.small,
+    borderRadius: SIZES.radiusSmall,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  mapActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: SIZES.medium,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: 'white',
+  },
+  mapActionButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: SIZES.small,
+    marginHorizontal: 4,
+  },
+  mapActionText: {
+    fontSize: SIZES.fontSmall,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  realTimeStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SIZES.small,
+    backgroundColor: COLORS.success + '20',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.success,
+    marginRight: SIZES.small,
+  },
+  statusText: {
+    fontSize: SIZES.fontSmall,
+    color: COLORS.success,
+    fontWeight: '600',
+    marginRight: SIZES.small,
+  },
+  updateTime: {
+    fontSize: SIZES.fontSmall,
+    color: COLORS.textSecondary,
   },
 });

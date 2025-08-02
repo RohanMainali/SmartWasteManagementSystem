@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const http = require('http');
+const os = require('os');
 require('dotenv').config();
 
 // Import routes
@@ -32,12 +33,36 @@ const server = http.createServer(app);
 
 // Security middleware
 app.use(helmet());
+
+// Get local IP address
+const getLocalIPAddress = () => {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+};
+
+const localIP = getLocalIPAddress();
+const port = process.env.PORT || 8081;
+
 app.use(cors({
   origin: [
-    'http://localhost:8081',
-    'http://192.168.1.198:8081',
-    'exp://192.168.1.198:8081',
-    'exp://localhost:8081'
+    `http://localhost:${port}`,
+    `http://${localIP}:${port}`,
+    `exp://${localIP}:${port}`,
+    `exp://localhost:${port}`,
+    // Allow any local network IP for development
+    /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:8081$/,
+    /^exp:\/\/192\.168\.\d{1,3}\.\d{1,3}:8081$/,
+    /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:8081$/,
+    /^exp:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:8081$/,
+    /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}:8081$/,
+    /^exp:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}:8081$/
   ],
   credentials: true
 }));
@@ -193,6 +218,9 @@ const io = webSocketService.initialize(server);
 
 server.listen(PORT, () => {
   console.log(`🚀 SafaCycle Backend API running on port ${PORT}`);
+  console.log(`🌐 Local IP: ${localIP}`);
+  console.log(`📱 Expo Dev URL: exp://${localIP}:8081`);
+  console.log(`🌍 Web URL: http://${localIP}:${PORT}`);
   console.log(`📝 API Documentation: http://localhost:${PORT}/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔌 WebSocket server initialized`);

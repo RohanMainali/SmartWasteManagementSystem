@@ -32,34 +32,6 @@ export const formatTime = (time) => {
 };
 
 /**
- * Gets relative time string (e.g., "5 minutes ago", "Just now")
- * @param {Date|string} date - Date to get relative time for
- * @returns {string} - Relative time string
- */
-export const getRelativeTime = (date) => {
-  if (!date) return "Never";
-  
-  const now = new Date();
-  const dateObj = new Date(date);
-  const diffInMs = now - dateObj;
-  const diffInSecs = Math.floor(diffInMs / 1000);
-  const diffInMins = Math.floor(diffInSecs / 60);
-  const diffInHours = Math.floor(diffInMins / 60);
-  const diffInDays = Math.floor(diffInHours / 24);
-
-  if (diffInSecs < 10) return "Just now";
-  if (diffInSecs < 60) return `${diffInSecs} seconds ago`;
-  if (diffInMins === 1) return "1 minute ago";
-  if (diffInMins < 60) return `${diffInMins} minutes ago`;
-  if (diffInHours === 1) return "1 hour ago";
-  if (diffInHours < 24) return `${diffInHours} hours ago`;
-  if (diffInDays === 1) return "1 day ago";
-  if (diffInDays < 7) return `${diffInDays} days ago`;
-  
-  return formatDate(date);
-};
-
-/**
  * Validates email format
  * @param {string} email - Email to validate
  * @returns {boolean} - True if email is valid

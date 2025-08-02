@@ -47,10 +47,14 @@ export default function SchedulePickupScreen({ navigation, route }) {
       if (response.success) {
         const user = response.data.user;
         
-        // Set address from user profile
-        if (user.profile?.address) {
-          const userAddress = `${user.profile.address.street || ""}, ${user.profile.address.city || ""}`.trim().replace(/^,\s*|,\s*$/, '');
-          setAddress(userAddress || "");
+        // Set address from user profile with better validation
+        if (user.profile?.address?.street && user.profile?.address?.city) {
+          const userAddress = `${user.profile.address.street}, ${user.profile.address.city}`;
+          setAddress(userAddress);
+        } else if (user.profile?.address?.street) {
+          setAddress(`${user.profile.address.street}, Kathmandu`);
+        } else if (user.profile?.address?.city) {
+          setAddress(`Main Street, ${user.profile.address.city}`);
         } else {
           // Set fallback Nepal address if no profile address
           setAddress("Thamel, Kathmandu");
@@ -63,10 +67,16 @@ export default function SchedulePickupScreen({ navigation, route }) {
           // Set fallback Nepal phone if no profile phone
           setContactPhone("+977-9841234567");
         }
+      } else {
+        // Set fallbacks if profile request fails
+        setAddress("Thamel, Kathmandu");
+        setContactPhone("+977-9841234567");
       }
     } catch (error) {
       console.error('Error loading user profile:', error);
-      // Keep empty defaults if profile loading fails
+      // Set fallbacks on error
+      setAddress("Thamel, Kathmandu");
+      setContactPhone("+977-9841234567");
     } finally {
       setLoadingProfile(false);
     }
@@ -78,72 +88,54 @@ export default function SchedulePickupScreen({ navigation, route }) {
       name: "General Waste",
       icon: "🗑️",
       description: "Household general waste",
-      baseCost: 50.0, // NPR
-      pricePerKg: 2.5, // NPR per kg
     },
     {
       id: "recyclable", 
       name: "Recyclables",
       icon: "♻️",
       description: "Paper, plastic, glass, metal",
-      baseCost: 40.0, // NPR
-      pricePerKg: 1.5, // NPR per kg
     },
     {
       id: "organic",
       name: "Organic Waste",
       icon: "🥬",
       description: "Food scraps, compostable materials",
-      baseCost: 35.0, // NPR
-      pricePerKg: 2.0, // NPR per kg
     },
     {
       id: "plastic",
       name: "Plastic",
       icon: "🥤",
       description: "Plastic containers, bottles, bags",
-      baseCost: 30.0, // NPR
-      pricePerKg: 1.8, // NPR per kg
     },
     {
       id: "paper",
       name: "Paper",
       icon: "📄",
       description: "Newspapers, cardboard, magazines",
-      baseCost: 25.0, // NPR
-      pricePerKg: 1.4, // NPR per kg
     },
     {
       id: "glass",
       name: "Glass",
       icon: "🍺",
       description: "Bottles, jars, containers",
-      baseCost: 35.0, // NPR
-      pricePerKg: 1.6, // NPR per kg
     },
     {
       id: "metal",
       name: "Metal",
       icon: "🥫",
       description: "Cans, aluminum, steel",
-      baseCost: 40.0, // NPR
-      pricePerKg: 2.2, // NPR per kg
     },
     {
       id: "electronic",
       name: "Electronic Waste",
       icon: "📱",
       description: "Phones, computers, appliances",
-      baseCost: 35.0,
-      pricePerKg: 2.0,
     },
     {
       id: "hazardous",
       name: "Hazardous Waste",
       icon: "☢️",
       description: "Chemicals, batteries, paint",
-      baseCost: 45.0,
-      pricePerKg: 2.5,
     },
   ];
 
@@ -190,28 +182,6 @@ export default function SchedulePickupScreen({ navigation, route }) {
     { id: "evening", time: "17:00 - 19:00", label: "Evening", popular: false },
   ];
 
-  const calculateEstimatedCost = () => {
-    if (selectedWasteTypes.length === 0 || !estimatedWeight) return 0;
-
-    const weight = parseFloat(estimatedWeight) || 0;
-    const weightPerType = weight / selectedWasteTypes.length; // Distribute weight evenly
-    
-    let totalCost = 0;
-    selectedWasteTypes.forEach(wasteTypeId => {
-      const wasteType = wasteTypes.find((type) => type.id === wasteTypeId);
-      if (wasteType) {
-        totalCost += wasteType.baseCost + weightPerType * wasteType.pricePerKg;
-      }
-    });
-
-    // Add urgent pickup fee (50% extra)
-    if (urgentPickup) {
-      totalCost *= 1.5;
-    }
-
-    return totalCost;
-  };
-
   const validateForm = () => {
     if (selectedWasteTypes.length === 0) {
       Alert.alert("Error", "Please select at least one waste type");
@@ -227,6 +197,10 @@ export default function SchedulePickupScreen({ navigation, route }) {
     }
     if (!estimatedWeight || isNaN(parseFloat(estimatedWeight))) {
       Alert.alert("Error", "Please enter a valid estimated weight");
+      return false;
+    }
+    if (!address || address.trim().length < 3) {
+      Alert.alert("Error", "Please enter a valid pickup address");
       return false;
     }
     return true;
@@ -265,11 +239,11 @@ export default function SchedulePickupScreen({ navigation, route }) {
           coordinates: [-74.006, 40.7128] // Default coordinates - should be updated with user's location
         },
         address: {
-          street: address.split(',')[0].trim(),
-          city: "Test City",
-          state: "TS", 
-          zipCode: "12345",
-          country: "Test Country"
+          street: address && address.trim() ? (address.includes(',') ? address.split(',')[0].trim() : address.trim()) : "Default Street",
+          city: address && address.includes(',') ? (address.split(',')[1] || "").trim() || "Kathmandu" : "Kathmandu",
+          state: "Bagmati", 
+          zipCode: "44600",
+          country: "Nepal"
         },
         specialInstructions: specialInstructions,
         priority: urgentPickup ? "high" : "normal"
@@ -327,7 +301,7 @@ export default function SchedulePickupScreen({ navigation, route }) {
               </Text>
             </TouchableOpacity>
           </View>
-          {addressCoordinates && (
+          {addressCoordinates && addressCoordinates.latitude && addressCoordinates.longitude && (
             <Text style={styles.coordinatesText}>
               📍 {addressCoordinates.latitude.toFixed(6)}, {addressCoordinates.longitude.toFixed(6)}
             </Text>
@@ -360,9 +334,6 @@ export default function SchedulePickupScreen({ navigation, route }) {
                 <Text style={styles.wasteTypeName}>{type.name}</Text>
                 <Text style={styles.wasteTypeDescription}>
                   {type.description}
-                </Text>
-                <Text style={styles.wasteTypePrice}>
-                  From ${type.baseCost.toFixed(2)}
                 </Text>
                 {selectedWasteTypes.includes(type.id) && (
                   <View style={styles.selectedIndicator}>
@@ -523,56 +494,6 @@ export default function SchedulePickupScreen({ navigation, route }) {
           />
         </View>
 
-        {/* Cost Estimation */}
-        {selectedWasteTypes.length > 0 && estimatedWeight && (
-          <View style={styles.costEstimationContainer}>
-            <Text style={styles.costEstimationTitle}>Estimated Cost</Text>
-            <View style={styles.costBreakdown}>
-              {selectedWasteTypes.map(wasteTypeId => {
-                const wasteType = wasteTypes.find((type) => type.id === wasteTypeId);
-                const weightPerType = parseFloat(estimatedWeight) / selectedWasteTypes.length;
-                if (!wasteType) return null;
-                
-                return (
-                  <View key={wasteTypeId} style={styles.costRow}>
-                    <Text style={styles.costLabel}>{wasteType.name}:</Text>
-                    <Text style={styles.costValue}>
-                      ${(wasteType.baseCost + weightPerType * wasteType.pricePerKg).toFixed(2)}
-                    </Text>
-                  </View>
-                );
-              })}
-              <View style={styles.costRow}>
-                <Text style={styles.costLabel}>
-                  Total Weight ({estimatedWeight}kg):
-                </Text>
-                <Text style={styles.costValue}>
-                  Distributed across {selectedWasteTypes.length} type{selectedWasteTypes.length > 1 ? 's' : ''}
-                </Text>
-              </View>
-              {urgentPickup && (
-                <View style={styles.costRow}>
-                  <Text style={styles.costLabel}>Urgent pickup fee (50%):</Text>
-                  <Text style={styles.costValue}>
-                    +${((calculateEstimatedCost() / 1.5) * 0.5).toFixed(2)}
-                  </Text>
-                </View>
-              )}
-              <View style={styles.costDivider} />
-              <View style={styles.costRow}>
-                <Text style={styles.costTotalLabel}>Total Estimated Cost:</Text>
-                <Text style={styles.costTotalValue}>
-                  ${calculateEstimatedCost().toFixed(2)}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.costNote}>
-              * Final cost may vary based on actual weight and additional
-              services
-            </Text>
-          </View>
-        )}
-
         {/* Schedule Button */}
         <CustomButton
           title={loading ? "Scheduling..." : (rescheduleId ? "Reschedule Pickup" : "Schedule Pickup")}
@@ -720,11 +641,6 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: "center",
     marginBottom: SIZES.small,
-  },
-  wasteTypePrice: {
-    fontSize: SIZES.fontSmall,
-    color: COLORS.primary,
-    fontWeight: "600",
   },
   datesScroll: {
     flexDirection: "row",
@@ -892,62 +808,6 @@ const styles = StyleSheet.create({
     paddingVertical: SIZES.medium,
     fontSize: SIZES.fontMedium,
     color: COLORS.text,
-  },
-  costEstimationContainer: {
-    backgroundColor: COLORS.surface,
-    borderRadius: SIZES.radiusMedium,
-    padding: SIZES.large,
-    marginBottom: SIZES.large,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  costEstimationTitle: {
-    fontSize: SIZES.fontLarge,
-    fontWeight: "600",
-    color: COLORS.text,
-    marginBottom: SIZES.medium,
-  },
-  costBreakdown: {
-    marginBottom: SIZES.small,
-  },
-  costRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: SIZES.small,
-  },
-  costLabel: {
-    fontSize: SIZES.fontMedium,
-    color: COLORS.textSecondary,
-  },
-  costValue: {
-    fontSize: SIZES.fontMedium,
-    color: COLORS.text,
-    fontWeight: "600",
-  },
-  costDivider: {
-    height: 1,
-    backgroundColor: COLORS.background,
-    marginVertical: SIZES.small,
-  },
-  costTotalLabel: {
-    fontSize: SIZES.fontMedium,
-    color: COLORS.text,
-    fontWeight: "600",
-  },
-  costTotalValue: {
-    fontSize: SIZES.fontLarge,
-    color: COLORS.primary,
-    fontWeight: "bold",
-  },
-  costNote: {
-    fontSize: SIZES.fontSmall,
-    color: COLORS.textLight,
-    fontStyle: "italic",
-    textAlign: "center",
   },
   scheduleButton: {
     marginBottom: SIZES.large,

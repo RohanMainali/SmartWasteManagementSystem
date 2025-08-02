@@ -48,38 +48,6 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// @route   GET /api/analytics/stats
-// @desc    Get collection statistics for drivers and general stats
-// @access  Private
-router.get('/stats', auth, async (req, res) => {
-  try {
-    // Return basic stats that can be used by drivers or admin
-    const stats = {
-      totalCollections: 145,
-      completedToday: 12,
-      pendingCollections: 8,
-      efficiency: 85.5,
-      routeCompletion: 92.3,
-      customerSatisfaction: 4.6,
-      wasteProcessed: 2.4, // tons
-      recyclingRate: 68.2
-    };
-
-    res.json({
-      success: true,
-      data: stats
-    });
-
-  } catch (error) {
-    console.error('Get stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching stats',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 // @route   GET /api/analytics/dashboard
 // @desc    Get customer dashboard analytics
 // @access  Private (Customer)

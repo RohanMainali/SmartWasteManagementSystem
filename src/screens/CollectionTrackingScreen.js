@@ -23,27 +23,13 @@ export default function CollectionTrackingScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [showCollectionModal, setShowCollectionModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [collectionWeight, setCollectionWeight] = useState("");
   const [collectionNotes, setCollectionNotes] = useState("");
   const [issueDescription, setIssueDescription] = useState("");
-  const [selectedIssueType, setSelectedIssueType] = useState("other");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
-
-  // Issue types for reporting collection problems
-  const issueTypes = [
-    { value: "access", label: "Access Issue" },
-    { value: "customer_absent", label: "Customer Absent" },
-    { value: "vehicle_breakdown", label: "Vehicle Issue" },
-    { value: "hazardous_waste", label: "Hazardous Waste" },
-    { value: "overweight", label: "Overweight" },
-    { value: "wrong_waste_type", label: "Wrong Waste Type" },
-    { value: "safety_concern", label: "Safety Concern" },
-    { value: "other", label: "Other" }
-  ];
 
   useEffect(() => {
     loadCollections();

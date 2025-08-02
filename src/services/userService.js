@@ -5,6 +5,8 @@ class UserService {
   // Get all users (Admin only)
   async getUsers(params = {}) {
     try {
+      console.log('🔍 UserService: Getting users with params:', params);
+      
       const queryParams = new URLSearchParams();
       
       // Add query parameters
@@ -17,13 +19,20 @@ class UserService {
       const queryString = queryParams.toString();
       const endpoint = `/users${queryString ? `?${queryString}` : ''}`;
       
-      return await apiService.get(endpoint);
+      console.log('🌐 UserService: Calling API endpoint:', endpoint);
+      
+      const response = await apiService.get(endpoint);
+      
+      console.log('📊 UserService: API response:', response);
+      
+      return response;
     } catch (error) {
-      console.error('Get users error:', error);
+      console.error('❌ Get users error:', error);
       return {
         success: false,
         message: 'Failed to fetch users',
-        data: null
+        data: null,
+        error: error.message
       };
     }
   }

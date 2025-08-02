@@ -30,11 +30,20 @@ const AdminDashboard = ({ navigation }) => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
+      console.log('📱 Loading admin dashboard data...');
       const data = await analyticsService.getDashboardAnalytics();
+      console.log('📊 Dashboard data loaded:', data);
       setAnalytics(data);
     } catch (error) {
-      console.error('Error loading dashboard:', error);
-      Alert.alert('Error', 'Failed to load dashboard data');
+      console.error('❌ Error loading dashboard:', error);
+      Alert.alert('Error', 'Failed to load dashboard data. Please check your connection and try again.');
+      // Set a fallback analytics object to prevent crashes
+      setAnalytics({
+        users: { total: 0, byRole: { admin: 0, driver: 0, customer: 0 }, byStatus: { active: 0, inactive: 0, locked: 0 }, recentJoins: 0 },
+        collections: { scheduled: 0, inProgress: 0, completed: 0, pending: 0, totalWasteCollected: 0, efficiency: 0, co2Saved: 0 },
+        system: { serverUptime: '0h 0m' },
+        trends: {}
+      });
     } finally {
       setLoading(false);
     }

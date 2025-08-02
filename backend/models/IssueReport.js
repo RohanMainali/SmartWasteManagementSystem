@@ -54,16 +54,21 @@ const issueReportSchema = new mongoose.Schema({
     index: true
   },
   
-  // Location Information
+  // Location Information (optional)
   location: {
     type: {
       type: String,
-      enum: ['Point'],
-      default: 'Point'
+      enum: ['Point']
     },
     coordinates: {
       type: [Number], // [longitude, latitude]
-      index: '2dsphere'
+      index: '2dsphere',
+      validate: {
+        validator: function(coords) {
+          return !coords || (Array.isArray(coords) && coords.length === 2);
+        },
+        message: 'Coordinates must be an array of exactly 2 numbers [longitude, latitude]'
+      }
     }
   },
   
@@ -330,6 +335,17 @@ issueReportSchema.pre('save', function(next) {
   // Set closed timestamp
   if (this.isModified('status') && this.status === 'closed' && !this.closedAt) {
     this.closedAt = new Date();
+  }
+  
+  // Clean up incomplete location data to prevent geospatial index errors
+  if (this.location) {
+    // If location exists but has no coordinates or invalid coordinates, remove it
+    if (!this.location.coordinates || 
+        !Array.isArray(this.location.coordinates) || 
+        this.location.coordinates.length !== 2 ||
+        this.location.coordinates.some(coord => typeof coord !== 'number')) {
+      this.location = undefined;
+    }
   }
   
   next();

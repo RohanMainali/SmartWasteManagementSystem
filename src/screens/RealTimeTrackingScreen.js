@@ -51,12 +51,8 @@ export default function RealTimeTrackingScreen({ navigation, route }) {
 
   const loadCollectionDetails = async () => {
     try {
-      const response = await apiService.getCollectionById(collectionId);
-      if (response.success) {
-        setCollection(response.data.collection);
-      } else {
-        Alert.alert('Error', response.message || 'Failed to load collection details');
-      }
+      const response = await apiService.getCollection(collectionId);
+      setCollection(response.collection);
     } catch (error) {
       console.error('Error loading collection details:', error);
       Alert.alert('Error', 'Failed to load collection details');

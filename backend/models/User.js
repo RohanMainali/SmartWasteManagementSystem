@@ -63,8 +63,7 @@ const userSchema = new mongoose.Schema({
     licenseNumber: { 
       type: String, 
       trim: true,
-      required: function() { return this.role === 'driver'; },
-      default: function() { return this.role === 'driver' ? 'PENDING' : undefined; }
+      required: function() { return this.role === 'driver'; }
     },
     vehicleAssigned: {
       type: mongoose.Schema.Types.ObjectId,

@@ -53,9 +53,9 @@ router.post('/register', validateRegistration, async (req, res) => {
     };
 
     // Add role-specific data if provided
-    if (role === 'driver') {
+    if (role === 'driver' && req.body.driverInfo) {
       userData.driverInfo = {
-        licenseNumber: req.body.driverInfo?.licenseNumber || 'PENDING', // Default value for initial registration
+        ...userData.driverInfo,
         ...req.body.driverInfo
       };
     } else if (role === 'customer' && req.body.customerInfo) {

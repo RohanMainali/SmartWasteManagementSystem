@@ -345,4 +345,147 @@ async function getTrackingData(collection, user) {
   };
 }
 
+// @route   POST /api/customer-tracking/test/create-fake-data
+// @desc    Create fake tracking data for testing (Development only)
+// @access  Public (in development)
+router.post('/test/create-fake-data', async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({
+        success: false,
+        message: 'This endpoint is only available in development'
+      });
+    }
+
+    // Create or find a test customer
+    let testCustomer = await User.findOne({ email: 'test.customer@safacycle.com' });
+    if (!testCustomer) {
+      testCustomer = new User({
+        name: 'Test Customer',
+        email: 'test.customer@safacycle.com',
+        phone: '+977-9841234567',
+        role: 'customer',
+        password: 'password123', // In real app, this would be hashed
+        address: 'Thamel, Kathmandu',
+        isVerified: true
+      });
+      await testCustomer.save();
+    }
+
+    // Create or find a test driver
+    let testDriver = await User.findOne({ email: 'ram.sharma@safacycle.com' });
+    if (!testDriver) {
+      testDriver = new User({
+        name: 'Ram Sharma',
+        email: 'ram.sharma@safacycle.com',
+        phone: '+977-9851234567',
+        role: 'driver',
+        password: 'password123',
+        isVerified: true,
+        driverInfo: {
+          licenseNumber: 'DL-001-2024',
+          licenseExpiry: new Date('2026-12-31'),
+          vehicleAssigned: null
+        }
+      });
+      await testDriver.save();
+    }
+
+    // Create or find a test vehicle
+    let testVehicle = await Vehicle.findOne({ plateNumber: 'BA 1 KHA 2345' });
+    if (!testVehicle) {
+      testVehicle = new Vehicle({
+        plateNumber: 'BA 1 KHA 2345',
+        licensePlate: 'BA 1 KHA 2345', // Keep both for compatibility
+        model: 'Tata Ace',
+        brand: 'Tata',
+        type: 'truck',
+        year: 2022,
+        capacity: {
+          weight: 1000, // kg
+          volume: 2.5   // cubic meters
+        },
+        driver: testDriver._id,
+        status: 'active'
+      });
+      await testVehicle.save();
+    }
+
+    // Create fake collection for August 4, 2025 at 8:45 AM
+    const august4Date = new Date('2025-08-04');
+    
+    let fakeCollection = await CollectionRequest.findOne({
+      customer: testCustomer._id,
+      requestedDate: august4Date
+    });
+
+    if (!fakeCollection) {
+      fakeCollection = new CollectionRequest({
+        customer: testCustomer._id,
+        requestedDate: august4Date,
+        requestedTime: 'morning', // Use enum value
+        preferredTimeRange: {
+          start: '08:00',
+          end: '10:00'
+        },
+        pickupLocation: {
+          type: 'Point',
+          coordinates: [85.3081, 27.7115] // [longitude, latitude] for Thamel
+        },
+        address: {
+          street: 'Thamel Marg',
+          city: 'Kathmandu',
+          state: 'Bagmati Province',
+          zipCode: '44600',
+          country: 'Nepal',
+          landmark: 'Near Thamel Chowk',
+          specialInstructions: 'Test collection for tracking demo'
+        },
+        wasteTypes: [
+          { category: 'general', estimatedWeight: 3 },
+          { category: 'recyclable', estimatedWeight: 2 }
+        ],
+        totalEstimatedWeight: 5,
+        status: 'in-progress', // Use valid enum value for active tracking
+        assignedDriver: testDriver._id,
+        assignedVehicle: testVehicle._id,
+        contactPhone: '+977-9841234567',
+        priority: 'normal'
+      });
+      await fakeCollection.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Fake tracking data created successfully',
+      data: {
+        collection: fakeCollection,
+        customer: {
+          id: testCustomer._id,
+          name: testCustomer.name,
+          email: testCustomer.email
+        },
+        driver: {
+          id: testDriver._id,
+          name: testDriver.name,
+          email: testDriver.email
+        },
+        vehicle: {
+          id: testVehicle._id,
+          licensePlate: testVehicle.licensePlate,
+          model: testVehicle.model
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error creating fake tracking data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create fake tracking data',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 module.exports = router;

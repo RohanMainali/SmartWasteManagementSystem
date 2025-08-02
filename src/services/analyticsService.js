@@ -5,27 +5,60 @@ class AnalyticsService {
   // Get dashboard analytics
   async getDashboardAnalytics() {
     try {
-      const [users, todaysRoutes] = await Promise.all([
+      console.log('🔍 Starting to fetch dashboard analytics...');
+      
+      const [usersResponse, todaysRoutes] = await Promise.all([
         userService.getUsers({ limit: 100 }),
         this.getTodaysCollectionStats()
       ]);
 
+      console.log('📊 Users response:', usersResponse);
+
+      // Handle the response structure properly
+      let users = [];
+      if (usersResponse && usersResponse.success && usersResponse.data && usersResponse.data.users) {
+        users = usersResponse.data.users;
+        console.log(`✅ Found ${users.length} users`);
+      } else if (usersResponse && usersResponse.data && Array.isArray(usersResponse.data)) {
+        users = usersResponse.data;
+        console.log(`✅ Found ${users.length} users (array format)`);
+      } else if (usersResponse && Array.isArray(usersResponse)) {
+        users = usersResponse;
+        console.log(`✅ Found ${users.length} users (direct array)`);
+      } else {
+        console.warn('⚠️ Unexpected users response structure:', usersResponse);
+        users = [];
+      }
+
       const analytics = {
-        users: this.analyzeUsers(users.users),
+        users: this.analyzeUsers(users),
         collections: todaysRoutes,
         system: await this.getSystemStats(),
         trends: await this.getTrends()
       };
 
+      console.log('✅ Dashboard analytics compiled successfully');
       return analytics;
     } catch (error) {
-      console.error('Error fetching dashboard analytics:', error);
-      throw error;
+      console.error('❌ Error fetching dashboard analytics:', error);
+      // Return a safe fallback structure
+      return {
+        users: this.analyzeUsers([]),
+        collections: await this.getTodaysCollectionStats(),
+        system: await this.getSystemStats(),
+        trends: await this.getTrends()
+      };
     }
   }
 
   // Analyze user statistics
   analyzeUsers(users) {
+    // Ensure users is an array
+    if (!Array.isArray(users)) {
+      console.warn('analyzeUsers received non-array:', users);
+      users = [];
+    }
+
     const userStats = {
       total: users.length,
       byRole: {
@@ -45,8 +78,14 @@ class AnalyticsService {
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
     users.forEach(user => {
-      // Count by role
-      userStats.byRole[user.role]++;
+      // Ensure user object exists and has required properties
+      if (!user) return;
+
+      // Count by role (with fallback)
+      const role = user.role || 'customer';
+      if (userStats.byRole.hasOwnProperty(role)) {
+        userStats.byRole[role]++;
+      }
       
       // Count by status
       if (user.isLocked) {
@@ -58,7 +97,8 @@ class AnalyticsService {
       }
 
       // Count recent joins
-      if (new Date(user.joinDate) > oneWeekAgo) {
+      const joinDate = user.joinDate || user.createdAt;
+      if (joinDate && new Date(joinDate) > oneWeekAgo) {
         userStats.recentJoins++;
       }
     });

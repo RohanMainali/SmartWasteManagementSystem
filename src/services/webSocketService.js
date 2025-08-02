@@ -11,17 +11,13 @@ class WebSocketService {
   }
 
   async connect() {
-    // WebSocket temporarily disabled - will be implemented with socket.io-client
-    console.log('WebSocket temporarily disabled for customer-only testing');
-    return;
-    
     if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
       return;
     }
 
     try {
       this.isConnecting = true;
-      const token = await AsyncStorage.getItem('safacycle_auth_token');
+      const token = await AsyncStorage.getItem('userToken');
       
       if (!token) {
         console.error('No auth token found for WebSocket connection');
@@ -29,17 +25,27 @@ class WebSocketService {
         return;
       }
 
-      // Connect to WebSocket server (adjust URL as needed)
-      const wsUrl = `ws://192.168.1.198:5001`;
-      this.ws = new WebSocket(wsUrl, [], {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      // Get WebSocket URL with same logic as API service
+      const getWebSocketUrl = (token) => {
+        if (__DEV__) {
+          try {
+            const Constants = require('expo-constants').default;
+            if (Constants.expoConfig?.hostUri) {
+              const hostUri = Constants.expoConfig.hostUri.split(':')[0];
+              return `ws://${hostUri}:5001/ws?token=${token}`;
+            }
+          } catch (error) {
+            console.log('Expo Constants not available for WebSocket, using fallback IP');
+          }
         }
-      });
+        // Fallback IP - should match the API service
+        const MANUAL_IP = '192.168.1.198';
+        return `ws://${MANUAL_IP}:5001/ws?token=${token}`;
+      };
 
-      // For socket.io client, we need to send auth in handshake
-      // But since we're using raw WebSocket, let's send token after connection
-      this.pendingToken = token;
+      const wsUrl = getWebSocketUrl(token);
+      console.log('🔌 Connecting to WebSocket:', wsUrl);
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         console.log('WebSocket connected');

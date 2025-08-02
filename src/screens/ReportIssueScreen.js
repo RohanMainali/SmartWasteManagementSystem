@@ -22,11 +22,15 @@ export default function ReportIssueScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   const issueTypes = [
-    { id: "missed_pickup", label: "Missed Pickup", icon: "📅" },
-    { id: "damaged_bin", label: "Damaged Bin", icon: "🗑️" },
+    { id: "missed-pickup", label: "Missed Pickup", icon: "📅" },
+    { id: "vehicle-issue", label: "Vehicle Issue", icon: "🚛" },
+    { id: "driver-behavior", label: "Driver Behavior", icon: "�" },
     { id: "billing", label: "Billing Issue", icon: "💳" },
-    { id: "service_quality", label: "Service Quality", icon: "⭐" },
-    { id: "schedule_change", label: "Schedule Change", icon: "🔄" },
+    { id: "service-quality", label: "Service Quality", icon: "⭐" },
+    { id: "environmental-concern", label: "Environmental Concern", icon: "🌱" },
+    { id: "scheduling", label: "Scheduling", icon: "🔄" },
+    { id: "app-technical", label: "App Technical", icon: "📱" },
+    { id: "waste-sorting", label: "Waste Sorting", icon: "♻️" },
     { id: "other", label: "Other", icon: "❓" },
   ];
 
@@ -67,9 +71,12 @@ export default function ReportIssueScreen({ navigation }) {
 
       const response = await apiService.reportIssue(issueData);
       
+      // Extract the issue ID from the response
+      const issueId = response?.data?.issueReport?.issueId || 'Unknown';
+      
       Alert.alert(
         "Issue Reported",
-        `Your issue has been reported successfully. Ticket ID: ${response.ticketId}`,
+        `Your issue has been reported successfully. Ticket ID: ${issueId}`,
         [
           {
             text: "OK",
