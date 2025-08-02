@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,10 +16,8 @@ import CustomButton from "../components/CustomButton";
 import { formatTime, getRelativeTime } from "../utils/helpers";
 import apiService from "../services/apiService";
 import webSocketService from "../services/webSocketService";
-import BaatoWebMapView from "../components/BaatoWebMapView";
 
 export default function DriverTrackingScreen({ navigation }) {
-  const mapRef = useRef(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [trackingData, setTrackingData] = useState(null);
@@ -30,16 +28,11 @@ export default function DriverTrackingScreen({ navigation }) {
     setupWebSocket();
 
     return () => {
-      // webSocketService.disconnect(); // Disabled temporarily
+      webSocketService.disconnect();
     };
   }, []);
 
   const setupWebSocket = () => {
-    // TODO: WebSocket integration for real-time updates
-    // Temporarily disabled to prevent connection errors
-    console.log('WebSocket setup deferred - will implement with Socket.IO');
-    
-    /* 
     try {
       webSocketService.connect();
       
@@ -60,7 +53,6 @@ export default function DriverTrackingScreen({ navigation }) {
     } catch (error) {
       console.error('WebSocket setup error:', error);
     }
-    */
   };
 
   const loadTrackingData = async () => {
@@ -72,15 +64,7 @@ export default function DriverTrackingScreen({ navigation }) {
       setTrackingData(activeTracking);
     } catch (error) {
       console.error('Failed to load tracking data:', error);
-      
-      // If API fails (like 404 for no active collection), don't set it as an error
-      // Let the UI handle the "no data" state gracefully
-      if (error.message && error.message.includes('No active collection')) {
-        setTrackingData(null);
-        setError(null); // Don't treat this as an error
-      } else {
-        setError(error.message || 'Failed to load tracking information');
-      }
+      setError(error.message || 'Failed to load tracking information');
     } finally {
       setLoading(false);
     }
@@ -170,7 +154,7 @@ export default function DriverTrackingScreen({ navigation }) {
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>No Active Collection</Text>
           <Text style={styles.errorMessage}>
-            {error || 'You don\'t have any active waste collections to track at the moment. Schedule a pickup from your home in Kathmandu, Pokhara, or other locations across Nepal.'}
+            {error || 'You don\'t have any active collections to track at the moment.'}
           </Text>
           <CustomButton
             title="Schedule a Pickup"
@@ -181,42 +165,6 @@ export default function DriverTrackingScreen({ navigation }) {
             title="Refresh"
             onPress={loadTrackingData}
             variant="secondary"
-            style={styles.errorButton}
-          />
-          <CustomButton
-            title="🧪 Test with Sample Data"
-            onPress={() => {
-              // Set sample Nepal tracking data for testing
-              setTrackingData({
-                collection: {
-                  requestId: 'WC-KTM-001',
-                  status: 'in_progress',
-                  requestedDate: new Date().toISOString(),
-                  wasteTypes: [
-                    { category: 'Organic' },
-                    { category: 'Recyclable' }
-                  ]
-                },
-                driver: {
-                  name: 'Ram Bahadur Thapa',
-                  phone: '+977-9851234567'
-                },
-                vehicle: {
-                  model: 'Tata Ace',
-                  licensePlate: 'बा १ च ५४३२'
-                },
-                driverLocation: {
-                  latitude: 27.7172,
-                  longitude: 85.3240,
-                  distance: 2.3,
-                  estimatedArrival: '15 minutes'
-                },
-                lastUpdate: new Date().toISOString()
-              });
-              setError(null);
-              Alert.alert('Test Data Loaded', 'Sample tracking data from Kathmandu loaded for testing.');
-            }}
-            variant="outline"
             style={styles.errorButton}
           />
         </View>
@@ -352,40 +300,6 @@ export default function DriverTrackingScreen({ navigation }) {
                   🟢 Tracking Active
                 </Text>
               </View>
-
-              {/* Live Map */}
-              <View style={styles.mapContainer}>
-                <BaatoWebMapView
-                  ref={mapRef}
-                  initialRegion={{
-                    latitude: trackingData.driverLocation.latitude,
-                    longitude: trackingData.driverLocation.longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  markers={[
-                    {
-                      id: 'driver',
-                      latitude: trackingData.driverLocation.latitude,
-                      longitude: trackingData.driverLocation.longitude,
-                      title: trackingData.driver.name,
-                      description: `${trackingData.vehicle?.model} - ${trackingData.vehicle?.licensePlate}`,
-                      color: COLORS.success,
-                    }
-                  ]}
-                  showUserLocation={true}
-                  style={styles.map}
-                />
-                <TouchableOpacity
-                  style={styles.fullMapButton}
-                  onPress={() => {
-                    const url = `https://maps.apple.com/?daddr=${trackingData.driverLocation.latitude},${trackingData.driverLocation.longitude}`;
-                    Linking.openURL(url);
-                  }}
-                >
-                  <Text style={styles.fullMapButtonText}>🗺️ Open Full Map</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           ) : (
             <View style={styles.noTrackingContainer}>
@@ -395,7 +309,9 @@ export default function DriverTrackingScreen({ navigation }) {
               </Text>
             </View>
           )}
-        </View>        {/* Action Buttons */}
+        </View>
+
+        {/* Action Buttons */}
         <View style={styles.actionSection}>
           <CustomButton
             title="🗺️ Open in Maps"
@@ -686,34 +602,5 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     borderColor: COLORS.error,
-  },
-  mapContainer: {
-    marginTop: SIZES.medium,
-    borderRadius: SIZES.radiusMedium,
-    overflow: 'hidden',
-    height: 200,
-    position: 'relative',
-  },
-  map: {
-    flex: 1,
-  },
-  fullMapButton: {
-    position: 'absolute',
-    top: SIZES.small,
-    right: SIZES.small,
-    backgroundColor: COLORS.surface + 'F0',
-    paddingHorizontal: SIZES.medium,
-    paddingVertical: SIZES.small,
-    borderRadius: SIZES.radiusSmall,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  fullMapButtonText: {
-    fontSize: SIZES.fontSmall,
-    color: COLORS.text,
-    fontWeight: '600',
   },
 });

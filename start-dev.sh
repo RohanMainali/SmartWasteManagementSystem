@@ -16,7 +16,7 @@ fi
 echo "✅ MongoDB is running"
 
 # Start backend server in background
-echo "🔧 Starting Backend API Server on port 5003..."
+echo "🔧 Starting Backend API Server on port 5001..."
 cd backend
 npm run dev &
 BACKEND_PID=$!
@@ -34,8 +34,8 @@ echo ""
 echo "🎉 SafaCycle Development Environment Started!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "📱 Frontend (Expo): http://localhost:8081"
-echo "🔧 Backend API: http://localhost:5003"
-echo "🏥 Health Check: http://localhost:5003/health"
+echo "🔧 Backend API: http://localhost:5001"
+echo "🏥 Health Check: http://localhost:5001/health"
 echo "🗄️  MongoDB: mongodb://localhost:27017/safacycle"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""

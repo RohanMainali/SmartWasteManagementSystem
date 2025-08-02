@@ -56,11 +56,15 @@ router.get('/', auth, async (req, res) => {
 // @access  Private
 router.get('/unread-count', auth, async (req, res) => {
   try {
-    const unreadCount = await Notification.getUnreadCount(req.user._id);
+    const unreadCount = await Notification.countDocuments({
+      recipient: req.user._id,
+      isRead: false,
+      isDeleted: false
+    });
 
     res.json({
       success: true,
-      data: { unreadCount }
+      data: { count: unreadCount }
     });
 
   } catch (error) {

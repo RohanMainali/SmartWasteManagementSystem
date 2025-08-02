@@ -11,13 +11,17 @@ class WebSocketService {
   }
 
   async connect() {
+    // WebSocket temporarily disabled - will be implemented with socket.io-client
+    console.log('WebSocket temporarily disabled for customer-only testing');
+    return;
+    
     if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
       return;
     }
 
     try {
       this.isConnecting = true;
-      const token = await AsyncStorage.getItem('userToken');
+      const token = await AsyncStorage.getItem('safacycle_auth_token');
       
       if (!token) {
         console.error('No auth token found for WebSocket connection');
@@ -26,8 +30,16 @@ class WebSocketService {
       }
 
       // Connect to WebSocket server (adjust URL as needed)
-      const wsUrl = `ws://192.168.1.198:5003/ws?token=${token}`;
-      this.ws = new WebSocket(wsUrl);
+      const wsUrl = `ws://192.168.1.198:5001`;
+      this.ws = new WebSocket(wsUrl, [], {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      // For socket.io client, we need to send auth in handshake
+      // But since we're using raw WebSocket, let's send token after connection
+      this.pendingToken = token;
 
       this.ws.onopen = () => {
         console.log('WebSocket connected');

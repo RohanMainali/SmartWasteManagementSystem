@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,9 +9,11 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { COLORS, SIZES } from "../utils/theme";
 import CustomButton from "../components/CustomButton";
+import LocationPicker from "../components/LocationPicker";
 import apiService from "../services/apiService";
 
 export default function SchedulePickupScreen({ navigation, route }) {
@@ -21,70 +23,111 @@ export default function SchedulePickupScreen({ navigation, route }) {
   const [estimatedWeight, setEstimatedWeight] = useState("");
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [urgentPickup, setUrgentPickup] = useState(false);
-  const [address, setAddress] = useState("789 Your Street, Eco City");
-  const [contactPhone, setContactPhone] = useState("+1-555-0123");
+  const [address, setAddress] = useState("");
+  const [addressCoordinates, setAddressCoordinates] = useState(null);
+  const [contactPhone, setContactPhone] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   // Check if this is a reschedule
   const rescheduleData = route?.params?.originalPickup;
   const rescheduleId = route?.params?.rescheduleId;
+
+  // Load user profile data on component mount
+  useEffect(() => {
+    loadUserProfile();
+  }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      setLoadingProfile(true);
+      const response = await apiService.getUserProfile();
+      
+      if (response.success) {
+        const user = response.data.user;
+        
+        // Set address from user profile
+        if (user.profile?.address) {
+          const userAddress = `${user.profile.address.street || ""}, ${user.profile.address.city || ""}`.trim().replace(/^,\s*|,\s*$/, '');
+          setAddress(userAddress || "");
+        } else {
+          // Set fallback Nepal address if no profile address
+          setAddress("Thamel, Kathmandu");
+        }
+        
+        // Set phone from user profile  
+        if (user.profile?.phone) {
+          setContactPhone(user.profile.phone);
+        } else {
+          // Set fallback Nepal phone if no profile phone
+          setContactPhone("+977-9841234567");
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+      // Keep empty defaults if profile loading fails
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
 
   const wasteTypes = [
     {
       id: "general",
       name: "General Waste",
       icon: "🗑️",
-      description: "General household waste",
-      baseCost: 25.0,
-      pricePerKg: 1.2,
+      description: "Household general waste",
+      baseCost: 50.0, // NPR
+      pricePerKg: 2.5, // NPR per kg
     },
     {
-      id: "recyclable",
+      id: "recyclable", 
       name: "Recyclables",
       icon: "♻️",
       description: "Paper, plastic, glass, metal",
-      baseCost: 20.0,
-      pricePerKg: 0.8,
+      baseCost: 40.0, // NPR
+      pricePerKg: 1.5, // NPR per kg
     },
     {
       id: "organic",
       name: "Organic Waste",
       icon: "🥬",
       description: "Food scraps, compostable materials",
-      baseCost: 22.0,
-      pricePerKg: 1.0,
+      baseCost: 35.0, // NPR
+      pricePerKg: 2.0, // NPR per kg
     },
     {
       id: "plastic",
       name: "Plastic",
       icon: "🥤",
       description: "Plastic containers, bottles, bags",
-      baseCost: 18.0,
-      pricePerKg: 0.9,
+      baseCost: 30.0, // NPR
+      pricePerKg: 1.8, // NPR per kg
     },
     {
       id: "paper",
       name: "Paper",
       icon: "📄",
       description: "Newspapers, cardboard, magazines",
-      baseCost: 15.0,
-      pricePerKg: 0.7,
+      baseCost: 25.0, // NPR
+      pricePerKg: 1.4, // NPR per kg
     },
     {
       id: "glass",
       name: "Glass",
       icon: "🍺",
       description: "Bottles, jars, containers",
-      baseCost: 20.0,
-      pricePerKg: 0.8,
+      baseCost: 35.0, // NPR
+      pricePerKg: 1.6, // NPR per kg
     },
     {
       id: "metal",
       name: "Metal",
       icon: "🥫",
       description: "Cans, aluminum, steel",
-      baseCost: 25.0,
-      pricePerKg: 1.1,
+      baseCost: 40.0, // NPR
+      pricePerKg: 2.2, // NPR per kg
     },
     {
       id: "electronic",
@@ -274,11 +317,21 @@ export default function SchedulePickupScreen({ navigation, route }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Pickup Address</Text>
           <View style={styles.addressContainer}>
-            <Text style={styles.addressText}>{address}</Text>
-            <TouchableOpacity style={styles.changeAddressButton}>
-              <Text style={styles.changeAddressText}>Change Address</Text>
+            <Text style={styles.addressText}>{address || "Select your pickup location"}</Text>
+            <TouchableOpacity 
+              style={styles.changeAddressButton}
+              onPress={() => setShowLocationPicker(true)}
+            >
+              <Text style={styles.changeAddressText}>
+                {address ? "Change Address" : "📍 Select Location"}
+              </Text>
             </TouchableOpacity>
           </View>
+          {addressCoordinates && (
+            <Text style={styles.coordinatesText}>
+              📍 {addressCoordinates.latitude.toFixed(6)}, {addressCoordinates.longitude.toFixed(6)}
+            </Text>
+          )}
         </View>
 
         {/* Waste Type Selection */}
@@ -553,6 +606,23 @@ export default function SchedulePickupScreen({ navigation, route }) {
           </View>
         </View>
       </ScrollView>
+
+      {/* Location Picker Modal */}
+      <Modal
+        visible={showLocationPicker}
+        animationType="slide"
+        onRequestClose={() => setShowLocationPicker(false)}
+      >
+        <LocationPicker
+          onLocationSelect={(location) => {
+            setAddress(location.address);
+            setAddressCoordinates(location.coordinates);
+            setShowLocationPicker(false);
+          }}
+          onCancel={() => setShowLocationPicker(false)}
+          initialAddress={address}
+        />
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -604,6 +674,12 @@ const styles = StyleSheet.create({
     fontSize: SIZES.fontSmall,
     color: COLORS.primary,
     fontWeight: "600",
+  },
+  coordinatesText: {
+    fontSize: SIZES.fontSmall,
+    color: COLORS.textLight,
+    marginTop: SIZES.small,
+    fontFamily: 'monospace',
   },
   wasteTypesGrid: {
     flexDirection: "row",

@@ -163,6 +163,189 @@ router.get('/stats', auth, adminOnly, async (req, res) => {
   }
 });
 
+// @route   GET /api/users/profile
+// @desc    Get current user's profile
+// @access  Private
+router.get('/profile', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .select('-password -emailVerificationToken -passwordResetToken')
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Add computed fields
+    const profile = {
+      ...user,
+      memberSince: user.createdAt,
+      lastActive: user.lastLogin || user.createdAt,
+      profileCompletion: calculateProfileCompletion(user)
+    };
+
+    res.json({
+      success: true,
+      data: { user: profile }
+    });
+
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user profile',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   PUT /api/users/profile
+// @desc    Update current user's profile
+// @access  Private
+router.put('/profile', auth, async (req, res) => {
+  try {
+    const updates = req.body;
+    
+    // Only allow certain fields to be updated
+    const allowedFields = ['name', 'profile', 'customerInfo', 'driverInfo', 'preferences'];
+    const updateData = {};
+    
+    allowedFields.forEach(field => {
+      if (updates[field] !== undefined) {
+        updateData[field] = updates[field];
+      }
+    });
+
+    // Don't allow role/status/security field changes
+    delete updateData.role;
+    delete updateData.status;
+    delete updateData.password;
+    delete updateData.email;
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).select('-password -emailVerificationToken -passwordResetToken');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: { user }
+    });
+
+  } catch (error) {
+    console.error('Update user profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating profile',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   POST /api/users/change-password
+// @desc    Change user password
+// @access  Private
+router.post('/change-password', auth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password and new password are required'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long'
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check current password
+    const isCurrentPasswordValid = await user.isValidPassword(currentPassword);
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error changing password',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Helper function to calculate profile completion
+function calculateProfileCompletion(user) {
+  let completion = 0;
+  const totalFields = 10;
+
+  // Basic fields (5 points each)
+  if (user.name) completion += 10;
+  if (user.email) completion += 10;
+  if (user.profile?.phone) completion += 10;
+  if (user.profile?.address) completion += 10;
+  if (user.profile?.dateOfBirth) completion += 10;
+
+  // Profile picture (10 points)
+  if (user.profile?.profilePicture) completion += 10;
+
+  // Role-specific fields (5 points each)
+  if (user.role === 'customer' && user.customerInfo) {
+    if (user.customerInfo.preferredPickupDays?.length > 0) completion += 10;
+    if (user.customerInfo.wasteTypes?.length > 0) completion += 10;
+    if (user.customerInfo.pickupLocation) completion += 10;
+  }
+
+  if (user.role === 'driver' && user.driverInfo) {
+    if (user.driverInfo.licenseNumber) completion += 10;
+    if (user.driverInfo.vehicleType) completion += 10;
+    if (user.driverInfo.workingHours) completion += 10;
+  }
+
+  // Preferences (10 points)
+  if (user.preferences) completion += 10;
+
+  return Math.min(completion, 100);
+}
+
 // @route   GET /api/users/:id
 // @desc    Get user by ID
 // @access  Private (Self or Admin)

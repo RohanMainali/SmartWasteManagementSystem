@@ -53,7 +53,7 @@
 - **Navigation** properly integrated across all screens
 
 ### Backend Connectivity:
-- **Express.js API** running on port 5003
+- **Express.js API** running on port 5001
 - **MongoDB Atlas** database integration
 - **RESTful APIs** for all CRUD operations
 - **WebSocket server** for real-time features

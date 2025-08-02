@@ -29,8 +29,8 @@ const routeSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: {
-      values: ['active', 'inactive', 'in_progress', 'completed'],
-      message: 'Status must be active, inactive, in_progress, or completed'
+      values: ['active', 'inactive', 'in_progress', 'completed', 'paused'],
+      message: 'Status must be active, inactive, in_progress, completed, or paused'
     },
     default: 'active'
   },
@@ -118,8 +118,37 @@ const routeSchema = new mongoose.Schema({
       type: Number,
       default: 1,
       min: [1, 'Order must be positive']
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'current', 'completed', 'skipped'],
+      default: 'pending'
+    },
+    completedAt: {
+      type: Date,
+      default: null
     }
   }],
+  actualStartTime: {
+    type: Date,
+    default: null
+  },
+  actualEndTime: {
+    type: Date,
+    default: null
+  },
+  completionSummary: {
+    totalStops: Number,
+    completedStops: Number,
+    skippedStops: Number,
+    completionRate: Number,
+    notes: String
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium'
+  },
   metrics: {
     totalDistance: {
       type: Number, // in km

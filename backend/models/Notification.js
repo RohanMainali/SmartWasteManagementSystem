@@ -49,6 +49,7 @@ const notificationSchema = new mongoose.Schema({
       'environmental-tip',
       'reward-earned',
       'subscription-expiry',
+      'new-request',
       'general'
     ],
     index: true

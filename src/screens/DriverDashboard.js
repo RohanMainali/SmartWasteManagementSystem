@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,41 +7,98 @@ import {
   SafeAreaView,
   ScrollView,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { COLORS, SIZES } from "../utils/theme";
 import CustomButton from "../components/CustomButton";
+import DriverLiveTracking from "../components/DriverLiveTracking";
+import apiService from "../services/apiService";
 
 export default function DriverDashboard({ navigation }) {
-  const [driverStats] = useState({
-    todayCollections: 12,
-    completedRoutes: 3,
-    pendingPickups: 8,
-    totalDistance: "45.2 km",
+  const [driverStats, setDriverStats] = useState({
+    todayCollections: 0,
+    completedRoutes: 0,
+    pendingPickups: 0,
+    totalDistance: "0 km",
   });
+  const [todayRoutes, setTodayRoutes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [todayRoutes] = useState([
-    {
-      id: 1,
-      route: "Route A - Residential",
-      status: "completed",
-      time: "09:00 AM",
-      collections: 15,
-    },
-    {
-      id: 2,
-      route: "Route B - Commercial",
-      status: "in-progress",
-      time: "11:30 AM",
-      collections: 8,
-    },
-    {
-      id: 3,
-      route: "Route C - Industrial",
-      status: "pending",
-      time: "02:00 PM",
-      collections: 12,
-    },
-  ]);
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load driver's upcoming collections and stats
+      const [upcomingResponse, statsResponse] = await Promise.all([
+        apiService.getDriverUpcomingCollections(),
+        apiService.getCollectionStats()
+      ]);
+
+      console.log('Raw upcomingResponse:', JSON.stringify(upcomingResponse, null, 2));
+      console.log('Raw statsResponse:', JSON.stringify(statsResponse, null, 2));
+
+      if (upcomingResponse.success) {
+        // Map API response to expected format
+        const collectionData = upcomingResponse.data || [];
+        console.log('Driver collections data:', collectionData);
+        
+        // Ensure collectionData is an array before mapping
+        if (Array.isArray(collectionData)) {
+          const mappedRoutes = collectionData.map((collection, index) => ({
+            id: collection._id || collection.id || index,
+            route: collection.address?.street || `Collection ${index + 1}`,
+            status: collection.status || 'pending',
+            time: collection.requestedTime || 'Not specified',
+            collections: 1, // Each collection is one stop
+            customer: collection.customer?.name || 'Customer',
+            address: collection.address?.street || 'Address not available',
+            wasteTypes: collection.wasteTypes || []
+          }));
+          setTodayRoutes(mappedRoutes);
+        } else {
+          console.warn('Collections data is not an array:', collectionData);
+          setTodayRoutes([]);
+        }
+      } else {
+        console.warn('Failed to load driver collections:', upcomingResponse.message);
+        setTodayRoutes([]);
+      }
+
+      if (statsResponse.success) {
+        const stats = statsResponse.data;
+        console.log('Driver stats data:', stats);
+        setDriverStats({
+          todayCollections: stats.todayTotal || 0,
+          completedRoutes: stats.completedToday || 0,
+          pendingPickups: stats.pendingToday || 0,
+          totalDistance: stats.totalDistance || "0 km",
+        });
+      } else {
+        console.warn('Failed to load driver stats:', statsResponse.message);
+      }
+
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      Alert.alert(
+        "Error", 
+        "Failed to load dashboard data. Please check your connection and try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadDashboardData();
+    setRefreshing(false);
+  };
 
   const quickActions = [
     {
@@ -156,6 +213,9 @@ export default function DriverDashboard({ navigation }) {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -170,9 +230,16 @@ export default function DriverDashboard({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Daily Stats */}
-        <View style={styles.statsContainer}>
-          <Text style={styles.sectionTitle}>Today's Progress</Text>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading dashboard...</Text>
+          </View>
+        ) : (
+          <>
+            {/* Daily Stats */}
+            <View style={styles.statsContainer}>
+              <Text style={styles.sectionTitle}>Today's Progress</Text>
           <View style={styles.statsGrid}>
             <View
               style={[
@@ -240,74 +307,84 @@ export default function DriverDashboard({ navigation }) {
 
         {/* Today's Routes */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's Routes</Text>
+          <Text style={styles.sectionTitle}>Today's Collections</Text>
           <View style={styles.routesContainer}>
-            {todayRoutes.map((route) => (
-              <View key={route.id} style={styles.routeCard}>
-                <View style={styles.routeHeader}>
-                  <View style={styles.routeInfo}>
-                    <Text style={styles.routeName}>{route.route}</Text>
-                    <Text style={styles.routeTime}>
-                      Scheduled: {route.time}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(route.status) + "20" },
-                    ]}
-                  >
-                    <Text
+            {todayRoutes.length > 0 ? (
+              todayRoutes.map((route) => (
+                <View key={route.id} style={styles.routeCard}>
+                  <View style={styles.routeHeader}>
+                    <View style={styles.routeInfo}>
+                      <Text style={styles.routeName}>{route.customer}</Text>
+                      <Text style={styles.routeTime}>
+                        {route.address}
+                      </Text>
+                      <Text style={styles.routeTime}>
+                        Time: {route.time}
+                      </Text>
+                    </View>
+                    <View
                       style={[
-                        styles.statusText,
-                        { color: getStatusColor(route.status) },
+                        styles.statusBadge,
+                        { backgroundColor: getStatusColor(route.status) + "20" },
                       ]}
                     >
-                      {getStatusText(route.status)}
+                      <Text
+                        style={[
+                          styles.statusText,
+                          { color: getStatusColor(route.status) },
+                        ]}
+                      >
+                        {getStatusText(route.status)}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.routeDetails}>
+                    <Text style={styles.routeCollections}>
+                      Waste types: {route.wasteTypes.map(w => w.category).join(', ') || 'Not specified'}
                     </Text>
+                    <View style={styles.routeActions}>
+                      {route.status === "pending" && (
+                        <TouchableOpacity
+                          style={[
+                            styles.actionButton,
+                            { backgroundColor: COLORS.primary },
+                          ]}
+                          onPress={() => handleRouteAction(route.id, "Start")}
+                        >
+                          <Text style={styles.actionButtonText}>Start</Text>
+                        </TouchableOpacity>
+                      )}
+                      {route.status === "in-progress" && (
+                        <TouchableOpacity
+                          style={[
+                            styles.actionButton,
+                            { backgroundColor: COLORS.warning },
+                          ]}
+                          onPress={() => handleRouteAction(route.id, "Continue")}
+                        >
+                          <Text style={styles.actionButtonText}>Continue</Text>
+                        </TouchableOpacity>
+                      )}
+                      {route.status === "completed" && (
+                        <View
+                          style={[
+                            styles.actionButton,
+                            { backgroundColor: COLORS.success },
+                          ]}
+                        >
+                          <Text style={styles.actionButtonText}>✓ Done</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </View>
-                <View style={styles.routeDetails}>
-                  <Text style={styles.routeCollections}>
-                    Collections: {route.collections} stops
-                  </Text>
-                  <View style={styles.routeActions}>
-                    {route.status === "pending" && (
-                      <TouchableOpacity
-                        style={[
-                          styles.actionButton,
-                          { backgroundColor: COLORS.primary },
-                        ]}
-                        onPress={() => handleRouteAction(route.id, "Start")}
-                      >
-                        <Text style={styles.actionButtonText}>Start</Text>
-                      </TouchableOpacity>
-                    )}
-                    {route.status === "in-progress" && (
-                      <TouchableOpacity
-                        style={[
-                          styles.actionButton,
-                          { backgroundColor: COLORS.warning },
-                        ]}
-                        onPress={() => handleRouteAction(route.id, "Continue")}
-                      >
-                        <Text style={styles.actionButtonText}>Continue</Text>
-                      </TouchableOpacity>
-                    )}
-                    {route.status === "completed" && (
-                      <View
-                        style={[
-                          styles.actionButton,
-                          { backgroundColor: COLORS.success },
-                        ]}
-                      >
-                        <Text style={styles.actionButtonText}>✓ Done</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
+              ))
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No collections scheduled for today</Text>
+                <Text style={styles.emptySubtext}>Check back later or contact your supervisor</Text>
               </View>
-            ))}
+            )}
           </View>
         </View>
 
@@ -320,6 +397,8 @@ export default function DriverDashboard({ navigation }) {
             variant="secondary"
           />
         </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -516,5 +595,34 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.text,
     marginBottom: SIZES.medium,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: SIZES.extraLarge * 2,
+  },
+  loadingText: {
+    fontSize: SIZES.fontMedium,
+    color: COLORS.textSecondary,
+    marginTop: SIZES.medium,
+  },
+  emptyContainer: {
+    padding: SIZES.extraLarge,
+    alignItems: "center",
+    backgroundColor: COLORS.surface,
+    borderRadius: SIZES.radiusMedium,
+  },
+  emptyText: {
+    fontSize: SIZES.fontMedium,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
+    textAlign: "center",
+  },
+  emptySubtext: {
+    fontSize: SIZES.fontSmall,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    marginTop: SIZES.small,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,19 +10,29 @@ import {
   Switch,
   Alert,
   Modal,
+  ActivityIndicator,
 } from "react-native";
 import { COLORS, SIZES } from "../utils/theme";
 import CustomButton from "../components/CustomButton";
+import apiService from "../services/apiService";
 
 export default function CustomerProfileScreen({ navigation }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   
   const [profileData, setProfileData] = useState({
-    name: "John Customer",
-    email: "john.customer@email.com",
-    phone: "+1-555-0123",
-    address: "789 Your Street, Eco City",
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
     notifications: {
       pickupReminders: true,
       driverUpdates: true,
@@ -38,18 +48,110 @@ export default function CustomerProfileScreen({ navigation }) {
 
   const [editedData, setEditedData] = useState({ ...profileData });
 
-  const handleSaveProfile = () => {
+  useEffect(() => {
+    loadUserProfile();
+  }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      setLoading(true);
+      
+      // Defensive check for apiService
+      if (!apiService || typeof apiService.getUserProfile !== 'function') {
+        throw new Error('apiService.getUserProfile is not available');
+      }
+      
+      const response = await apiService.getUserProfile();
+      
+      if (response.success) {
+        const user = response.data.user;
+        const formattedProfile = {
+          name: user.name || "",
+          email: user.email || "",
+          phone: user.profile?.phone || "",
+          address: user.profile?.address ? 
+            `${user.profile.address.street || ""}, ${user.profile.address.city || ""}`.trim().replace(/^,\s*|,\s*$/, '') : "",
+          notifications: user.preferences?.notifications || {
+            pickupReminders: true,
+            driverUpdates: true,
+            ecoTips: true,
+            promotions: false,
+          },
+          preferences: {
+            preferredPickupTime: user.customerInfo?.preferredPickupTime || "morning",
+            wasteTypes: user.customerInfo?.wasteTypes || ["household", "recyclable"],
+            frequencyPreference: user.customerInfo?.frequencyPreference || "weekly",
+          },
+        };
+        
+        setProfileData(formattedProfile);
+        setEditedData(formattedProfile);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      Alert.alert("Error", "Failed to load profile data. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
     // Validate required fields
     if (!editedData.name.trim() || !editedData.email.trim()) {
       Alert.alert("Error", "Name and email are required fields");
       return;
     }
 
-    // Update profile data
-    setProfileData({ ...editedData });
-    setIsEditMode(false);
-    Alert.alert("Success", "Profile updated successfully!");
+    try {
+      setSaving(true);
+      
+      // Prepare profile data for API
+      const updateData = {
+        name: editedData.name.trim(),
+        profile: {
+          phone: editedData.phone.trim(),
+          address: {
+            street: editedData.address.split(',')[0]?.trim() || "",
+            city: editedData.address.split(',')[1]?.trim() || ""
+          }
+        },
+        preferences: {
+          notifications: editedData.notifications
+        },
+        customerInfo: {
+          preferredPickupTime: editedData.preferences.preferredPickupTime,
+          wasteTypes: editedData.preferences.wasteTypes,
+          frequencyPreference: editedData.preferences.frequencyPreference
+        }
+      };
+
+      const response = await apiService.updateUserProfile(updateData);
+      
+      if (response.success) {
+        setProfileData({ ...editedData });
+        setIsEditMode(false);
+        Alert.alert("Success", "Profile updated successfully!");
+      } else {
+        throw new Error(response.message || "Failed to update profile");
+      }
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      Alert.alert("Error", error.message || "Failed to update profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const handleCancelEdit = () => {
     setEditedData({ ...profileData });
@@ -66,7 +168,69 @@ export default function CustomerProfileScreen({ navigation }) {
     });
   };
 
-  const handleDeleteAccount = () => {
+  const handleChangePassword = async () => {
+    const { currentPassword, newPassword, confirmPassword } = passwordData;
+    
+    // Validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert("Error", "All password fields are required");
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "New passwords do not match");
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      Alert.alert("Error", "New password must be at least 6 characters long");
+      return;
+    }
+    
+    try {
+      setSaving(true);
+      const response = await apiService.changePassword({
+        currentPassword,
+        newPassword
+      });
+      
+      if (response.success) {
+        Alert.alert("Success", "Password changed successfully");
+        setShowPasswordModal(false);
+        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      } else {
+        Alert.alert("Error", response.message || "Failed to change password");
+      }
+    } catch (error) {
+      console.error('Change password error:', error);
+      Alert.alert("Error", "Failed to change password. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDataExport = async () => {
+    try {
+      setSaving(true);
+      const response = await apiService.exportUserData();
+      
+      if (response.success) {
+        Alert.alert(
+          "Data Export Successful", 
+          "Your data has been exported successfully. The file will be sent to your registered email address within 24 hours."
+        );
+      } else {
+        Alert.alert("Error", response.message || "Failed to export data");
+      }
+    } catch (error) {
+      console.error('Data export error:', error);
+      Alert.alert("Error", "Failed to export data. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
     setShowDeleteModal(false);
     Alert.alert(
       "Account Deleted",
@@ -92,6 +256,75 @@ export default function CustomerProfileScreen({ navigation }) {
     { value: "biweekly", label: "Bi-weekly" },
     { value: "monthly", label: "Monthly" },
   ];
+
+  const renderPasswordModal = () => (
+    <Modal visible={showPasswordModal} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Change Password</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Current Password</Text>
+            <TextInput
+              style={styles.input}
+              value={passwordData.currentPassword}
+              onChangeText={(text) => setPasswordData(prev => ({ ...prev, currentPassword: text }))}
+              placeholder="Enter current password"
+              placeholderTextColor={COLORS.textSecondary}
+              secureTextEntry
+            />
+          </View>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>New Password</Text>
+            <TextInput
+              style={styles.input}
+              value={passwordData.newPassword}
+              onChangeText={(text) => setPasswordData(prev => ({ ...prev, newPassword: text }))}
+              placeholder="Enter new password"
+              placeholderTextColor={COLORS.textSecondary}
+              secureTextEntry
+            />
+          </View>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Confirm New Password</Text>
+            <TextInput
+              style={styles.input}
+              value={passwordData.confirmPassword}
+              onChangeText={(text) => setPasswordData(prev => ({ ...prev, confirmPassword: text }))}
+              placeholder="Confirm new password"
+              placeholderTextColor={COLORS.textSecondary}
+              secureTextEntry
+            />
+          </View>
+          
+          <View style={styles.modalButtonGroup}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => {
+                setShowPasswordModal(false);
+                setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.saveButton]}
+              onPress={handleChangePassword}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={COLORS.white} size="small" />
+              ) : (
+                <Text style={styles.saveButtonText}>Change Password</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   const renderDeleteModal = () => (
     <Modal visible={showDeleteModal} transparent animationType="fade">
@@ -339,13 +572,13 @@ export default function CustomerProfileScreen({ navigation }) {
             <>
               <CustomButton
                 title="Change Password"
-                onPress={() => Alert.alert("Change Password", "Password change feature coming soon!")}
+                onPress={() => setShowPasswordModal(true)}
                 variant="secondary"
                 style={styles.actionButton}
               />
               <CustomButton
                 title="Download Data"
-                onPress={() => Alert.alert("Download Data", "Your data export will be sent to your email.")}
+                onPress={handleDataExport}
                 variant="secondary"
                 style={styles.actionButton}
               />
@@ -360,6 +593,7 @@ export default function CustomerProfileScreen({ navigation }) {
         </View>
       </ScrollView>
 
+      {renderPasswordModal()}
       {renderDeleteModal()}
     </SafeAreaView>
   );
@@ -515,6 +749,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     gap: SIZES.medium,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    marginTop: SIZES.medium,
+    fontSize: SIZES.fontMedium,
+    color: COLORS.text,
   },
   cancelEditButton: {
     flex: 1,

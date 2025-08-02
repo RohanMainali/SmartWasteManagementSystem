@@ -56,88 +56,26 @@ export default function CustomerInsightsScreen({ navigation }) {
       if (insightsResponse.success) {
         setInsightsData(insightsResponse.data);
       } else {
-        // Fallback to mock data
-        setInsightsData(getMockInsightsData());
+        console.error('Failed to load insights:', insightsResponse.message);
+        setInsightsData(null);
       }
 
       if (environmentalResponse.success) {
         setEnvironmentalImpact(environmentalResponse.data);
       } else {
-        // Fallback to mock environmental data
-        setEnvironmentalImpact(getMockEnvironmentalData());
+        console.error('Failed to load environmental data:', environmentalResponse.message);
+        setEnvironmentalImpact(null);
       }
 
     } catch (error) {
       console.error('Error loading insights:', error);
-      // Use mock data as fallback
-      setInsightsData(getMockInsightsData());
-      setEnvironmentalImpact(getMockEnvironmentalData());
+      setInsightsData(null);
+      setEnvironmentalImpact(null);
+      Alert.alert("Error", "Failed to load insights data. Please try again.");
     } finally {
       setLoading(false);
     }
   };
-
-  const getMockInsightsData = () => ({
-    month: {
-      totalCollections: 8,
-      wasteReduced: 156.5,
-      recyclingRate: 68.2,
-      costSaved: 89.50,
-      carbonFootprint: -12.3,
-      streak: 15,
-      achievements: ["Eco Warrior", "Recycling Champion"],
-      wasteBreakdown: {
-        organic: 45.2,
-        plastic: 32.1,
-        paper: 18.7,
-        glass: 4.0
-      },
-      monthlyTrend: [65, 72, 68, 75, 68, 70, 68.2]
-    },
-    quarter: {
-      totalCollections: 24,
-      wasteReduced: 445.8,
-      recyclingRate: 71.5,
-      costSaved: 267.25,
-      carbonFootprint: -38.7,
-      streak: 45,
-      achievements: ["Eco Warrior", "Recycling Champion", "Green Guardian"],
-      wasteBreakdown: {
-        organic: 42.8,
-        plastic: 34.5,
-        paper: 17.2,
-        glass: 5.5
-      },
-      monthlyTrend: [62, 65, 68, 70, 69, 71, 71.5]
-    },
-    year: {
-      totalCollections: 96,
-      wasteReduced: 1823.4,
-      recyclingRate: 69.8,
-      costSaved: 1156.80,
-      carbonFootprint: -156.2,
-      streak: 180,
-      achievements: ["Eco Warrior", "Recycling Champion", "Green Guardian", "Sustainability Master"],
-      wasteBreakdown: {
-        organic: 43.5,
-        plastic: 33.2,
-        paper: 17.8,
-        glass: 5.5
-      },
-      monthlyTrend: [58, 61, 65, 67, 68, 69, 70, 71, 69, 68, 70, 69.8]
-    },
-  });
-
-  const getMockEnvironmentalData = () => ({
-    treesEquivalent: 12.5,
-    waterSaved: 2340,
-    energySaved: 156,
-    co2Reduced: 45.7,
-    comparison: {
-      betterThan: 78,
-      description: "You're doing better than 78% of users in your area!"
-    }
-  });
 
   const renderEnvironmentalImpact = () => (
     <View style={styles.section}>
@@ -325,6 +263,19 @@ export default function CustomerInsightsScreen({ navigation }) {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Loading your eco insights...</Text>
+        </View>
+      ) : !insightsData && !environmentalImpact ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.noDataTitle}>No Data Available</Text>
+          <Text style={styles.noDataText}>
+            Start scheduling pickups to see your environmental impact and personalized insights.
+          </Text>
+          <TouchableOpacity
+            style={styles.scheduleButton}
+            onPress={() => navigation.navigate('SchedulePickup')}
+          >
+            <Text style={styles.scheduleButtonText}>Schedule Your First Pickup</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -895,5 +846,31 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     marginRight: SIZES.small,
+  },
+  noDataTitle: {
+    fontSize: SIZES.fontLarge,
+    fontWeight: "bold",
+    color: COLORS.text,
+    marginBottom: SIZES.medium,
+    textAlign: "center",
+  },
+  noDataText: {
+    fontSize: SIZES.fontMedium,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    marginBottom: SIZES.extraLarge,
+    lineHeight: 24,
+  },
+  scheduleButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SIZES.extraLarge,
+    paddingVertical: SIZES.large,
+    borderRadius: SIZES.radiusMedium,
+  },
+  scheduleButtonText: {
+    color: COLORS.white,
+    fontSize: SIZES.fontMedium,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

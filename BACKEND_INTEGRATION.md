@@ -13,7 +13,7 @@ This document outlines the backend integration for the SafaCycle Smart Waste Man
 - **Validation**: express-validator
 
 ### Port Configuration
-- **Backend API**: Port 5003
+- **Backend API**: Port 5001
 - **Frontend (Expo)**: Port 8081
 - **MongoDB**: Port 27017 (default)
 
@@ -90,7 +90,7 @@ SafaCycle-main/
 
 ```env
 NODE_ENV=development
-PORT=5003
+PORT=5001
 MONGODB_URI=mongodb://localhost:27017/safacycle
 JWT_SECRET=your_super_secret_jwt_key_here
 JWT_EXPIRE=30d
@@ -152,7 +152,7 @@ RATE_LIMIT_MAX_REQUESTS=100
 
 Test the backend API health:
 ```bash
-curl http://localhost:5003/health
+curl http://localhost:5001/health
 ```
 
 Expected response:
@@ -162,7 +162,7 @@ Expected response:
   "message": "SafaCycle Backend API is running",
   "timestamp": "2025-07-31T16:03:32.443Z",
   "environment": "development",
-  "port": "5003"
+  "port": "5001"
 }
 ```
 
@@ -219,13 +219,13 @@ Expected response:
 3. **Port Already in Use**
    ```
    Solution: Kill process using the port
-   lsof -ti:5003 | xargs kill -9
+   lsof -ti:5001 | xargs kill -9
    ```
 
 4. **Network Request Failed**
    ```
-   Solution: Check if backend is running on port 5003
-   curl http://localhost:5003/health
+   Solution: Check if backend is running on port 5001
+   curl http://localhost:5001/health
    ```
 
 ## 🔄 Development Workflow

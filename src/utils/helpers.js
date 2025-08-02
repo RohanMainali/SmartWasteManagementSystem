@@ -230,7 +230,7 @@ export const formatDuration = (minutes) => {
  * @param {string} baseUrl - Base URL to test (optional)
  * @returns {Promise<boolean>} - True if backend is reachable
  */
-export const testNetworkConnectivity = async (baseUrl = 'http://192.168.1.198:5003') => {
+export const testNetworkConnectivity = async (baseUrl = 'http://192.168.1.198:5001') => {
   try {
     console.log('🌐 Testing network connectivity to:', baseUrl);
     const response = await fetch(`${baseUrl}/health`, {

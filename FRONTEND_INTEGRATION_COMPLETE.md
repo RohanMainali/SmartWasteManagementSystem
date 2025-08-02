@@ -4,7 +4,7 @@
 Successfully integrated the React Native frontend with the fully functional Express.js backend system.
 
 ## Backend Status ✅ COMPLETE
-- Express.js server running on port 5003
+- Express.js server running on port 5001
 - MongoDB Atlas database connected and operational
 - All customer APIs tested and working:
   - Authentication (login/signup)
@@ -113,7 +113,7 @@ Successfully integrated the React Native frontend with the fully functional Expr
 6. **Performance Optimization**: Image optimization and caching
 
 ## How to Test the Integration
-1. Start the backend server: `npm run dev` (on port 5003)
+1. Start the backend server: `npm run dev` (on port 5001)
 2. Start the React Native app: `npm start` (Expo development server)
 3. Test customer registration and login
 4. Navigate through dashboard, scheduling, history, and notifications

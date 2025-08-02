@@ -130,33 +130,30 @@ export default function SettingsScreen({ navigation }) {
   const handleSettingAction = (action) => {
     switch (action) {
       case "editProfile":
-        Alert.alert("Edit Profile", "Profile editing feature coming soon!");
+        navigation.navigate("CustomerProfile");
         break;
       case "changePassword":
-        Alert.alert("Change Password", "Password change feature coming soon!");
+        navigation.navigate("CustomerProfile");
         break;
       case "privacy":
-        Alert.alert("Privacy Settings", "Privacy settings coming soon!");
+        Alert.alert("Privacy Settings", "Navigate to app privacy settings in your device settings.");
         break;
       case "notificationSettings":
         navigation.navigate("NotificationSettings");
         break;
       case "help":
-        Alert.alert(
-          "Help Center",
-          "Help documentation will be available soon!"
-        );
+        navigation.navigate("EmergencyContact");
         break;
       case "contact":
-        Alert.alert("Contact Support", "Support contact feature coming soon!");
+        navigation.navigate("EmergencyContact");
         break;
       case "feedback":
-        Alert.alert("Send Feedback", "Feedback feature coming soon!");
+        navigation.navigate("ReportIssue");
         break;
       case "terms":
         Alert.alert(
           "Terms & Conditions",
-          "Terms and conditions will be displayed here!"
+          "By using SafaCycle, you agree to our terms of service and privacy policy. Our commitment is to provide transparent waste management services while protecting your personal information."
         );
         break;
       case "version":

@@ -9,117 +9,142 @@ import {
   Modal,
   Alert,
   TextInput,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { COLORS, SIZES } from "../utils/theme";
 import CustomButton from "../components/CustomButton";
 import { formatTime, formatDate, getStatusColor } from "../utils/helpers";
+import apiService from "../services/apiService";
 
 export default function CollectionTrackingScreen({ navigation }) {
-  const [collections, setCollections] = useState([
-    {
-      id: 1,
-      address: "123 Green Street, Eco City",
-      customerName: "Sarah Johnson",
-      phone: "+1-555-0123",
-      wasteType: "Mixed Household",
-      scheduledTime: "09:00",
-      estimatedWeight: 25,
-      actualWeight: null,
-      status: "pending",
-      priority: "normal",
-      notes: "Ring doorbell twice",
-      collectedAt: null,
-      issues: [],
-      coordinates: { lat: 40.7128, lng: -74.006 },
-    },
-    {
-      id: 2,
-      address: "456 Recycling Road, Eco City",
-      customerName: "Mike Chen",
-      phone: "+1-555-0124",
-      wasteType: "Recyclables",
-      scheduledTime: "09:30",
-      estimatedWeight: 15,
-      actualWeight: 18,
-      status: "completed",
-      priority: "normal",
-      notes: "Leave bin by garage",
-      collectedAt: "2025-01-31T09:35:00Z",
-      issues: [],
-      coordinates: { lat: 40.7589, lng: -73.9851 },
-    },
-    {
-      id: 3,
-      address: "789 Compost Circle, Eco City",
-      customerName: "Emily Davis",
-      phone: "+1-555-0125",
-      wasteType: "Organic",
-      scheduledTime: "10:00",
-      estimatedWeight: 20,
-      actualWeight: null,
-      status: "in-progress",
-      priority: "high",
-      notes: "Customer requested early pickup",
-      collectedAt: null,
-      issues: [],
-      coordinates: { lat: 40.7831, lng: -73.9712 },
-    },
-    {
-      id: 4,
-      address: "321 Hazardous Highway, Eco City",
-      customerName: "Robert Wilson",
-      phone: "+1-555-0126",
-      wasteType: "Hazardous",
-      scheduledTime: "10:30",
-      estimatedWeight: 5,
-      actualWeight: null,
-      status: "skipped",
-      priority: "high",
-      notes: "Special handling required",
-      collectedAt: null,
-      issues: ["Customer not available", "Special equipment needed"],
-      coordinates: { lat: 40.7505, lng: -73.9934 },
-    },
-    {
-      id: 5,
-      address: "654 Garden Grove, Eco City",
-      customerName: "Lisa Martinez",
-      phone: "+1-555-0127",
-      wasteType: "Garden Waste",
-      scheduledTime: "11:00",
-      estimatedWeight: 30,
-      actualWeight: null,
-      status: "pending",
-      priority: "normal",
-      notes: "Bags located behind house",
-      collectedAt: null,
-      issues: [],
-      coordinates: { lat: 40.7282, lng: -73.7949 },
-    },
-  ]);
-
+  const [collections, setCollections] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedCollection, setSelectedCollection] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showCollectionModal, setShowCollectionModal] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [collectionWeight, setCollectionWeight] = useState("");
   const [collectionNotes, setCollectionNotes] = useState("");
   const [issueDescription, setIssueDescription] = useState("");
   const [selectedIssueType, setSelectedIssueType] = useState("other");
-
-  const issueTypes = [
-    { value: "customer_unavailable", label: "Customer Not Available" },
-    { value: "access_denied", label: "Access Denied" },
-    { value: "wrong_waste_type", label: "Wrong Waste Type" },
-    { value: "overweight", label: "Overweight Container" },
-    { value: "contaminated", label: "Contaminated Waste" },
-    { value: "special_equipment", label: "Special Equipment Needed" },
-    { value: "safety_concern", label: "Safety Concern" },
-    { value: "other", label: "Other Issue" },
-  ];
-
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
+
+  // Issue types for reporting collection problems
+  const issueTypes = [
+    { value: "access", label: "Access Issue" },
+    { value: "customer_absent", label: "Customer Absent" },
+    { value: "vehicle_breakdown", label: "Vehicle Issue" },
+    { value: "hazardous_waste", label: "Hazardous Waste" },
+    { value: "overweight", label: "Overweight" },
+    { value: "wrong_waste_type", label: "Wrong Waste Type" },
+    { value: "safety_concern", label: "Safety Concern" },
+    { value: "other", label: "Other" }
+  ];
+
+  useEffect(() => {
+    loadCollections();
+  }, []);
+
+  const loadCollections = async () => {
+    try {
+      setLoading(true);
+      const response = await apiService.get('/collections?status=pending,confirmed,in-progress');
+      
+      if (response.success) {
+        setCollections(response.data.collections);
+      } else {
+        throw new Error(response.message || 'Failed to load collections');
+      }
+    } catch (error) {
+      console.error('Error loading collections:', error);
+      Alert.alert("Error", "Failed to load collections. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await loadCollections();
+    } catch (error) {
+      console.error('Error refreshing collections:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading collections...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case "pending":
+        return "⏳";
+      case "confirmed":
+        return "✅";
+      case "in-progress":
+        return "🚛";
+      case "completed":
+        return "✔️";
+      case "cancelled":
+        return "❌";
+      case "skipped":
+        return "⏭️";
+      default:
+        return "❓";
+    }
+  };
+
+  const getPriorityIcon = (priority) => {
+    switch (priority) {
+      case "high":
+        return "🔴";
+      case "medium":
+        return "🟡";
+      case "low":
+        return "🟢";
+      default:
+        return "⚪";
+    }
+  };
+
+  const getWasteTypeIcon = (wasteType) => {
+    if (Array.isArray(wasteType)) {
+      return "🗂️"; // Multiple types
+    }
+    
+    switch (wasteType?.toLowerCase()) {
+      case "organic":
+        return "🥬";
+      case "recyclable":
+      case "recyclables":
+        return "♻️";
+      case "electronic":
+        return "💻";
+      case "hazardous":
+        return "☢️";
+      case "general":
+      case "mixed household":
+        return "🗑️";
+      case "garden waste":
+        return "🌿";
+      default:
+        return "📦";
+    }
+  };
 
   const filteredCollections = collections.filter((collection) => {
     let matches = true;
@@ -238,51 +263,6 @@ export default function CollectionTrackingScreen({ navigation }) {
       "Issue Reported",
       "The issue has been recorded and collection marked as skipped."
     );
-  };
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case "completed":
-        return "✅";
-      case "in-progress":
-        return "🔄";
-      case "pending":
-        return "⏳";
-      case "skipped":
-        return "⚠️";
-      default:
-        return "❓";
-    }
-  };
-
-  const getPriorityIcon = (priority) => {
-    switch (priority) {
-      case "high":
-        return "🔴";
-      case "normal":
-        return "🟡";
-      case "low":
-        return "🟢";
-      default:
-        return "⚪";
-    }
-  };
-
-  const getWasteTypeIcon = (wasteType) => {
-    switch (wasteType.toLowerCase()) {
-      case "mixed household":
-        return "🗑️";
-      case "recyclables":
-        return "♻️";
-      case "organic":
-        return "🥬";
-      case "hazardous":
-        return "☢️";
-      case "garden waste":
-        return "🌱";
-      default:
-        return "📦";
-    }
   };
 
   return (

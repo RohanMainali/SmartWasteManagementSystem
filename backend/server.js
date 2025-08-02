@@ -4,19 +4,31 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
+const http = require('http');
 require('dotenv').config();
 
 // Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
-const vehicleRoutes = require('./routes/vehicles');
-const routeRoutes = require('./routes/routes');
+const accountRoutes = require('./routes/account');
 const collectionRoutes = require('./routes/collections');
 const issueRoutes = require('./routes/issues');
 const notificationRoutes = require('./routes/notifications');
 const analyticsRoutes = require('./routes/analytics');
+const customerTrackingRoutes = require('./routes/customerTracking');
+
+// Import new advanced services
+const routeOptimizationRoutes = require('./routes/routeOptimization');
+const trackingRoutes = require('./routes/tracking');
+const advancedAnalyticsRoutes = require('./routes/advancedAnalytics');
+const notificationServiceRoutes = require('./routes/notificationService');
+const testDataRoutes = require('./routes/testData');
+const testTrackingRoutes = require('./routes/testTracking');
+const healthRoutes = require('./routes/health');
+const webSocketService = require('./services/webSocketService');
 
 const app = express();
+const server = http.createServer(app);
 
 // Security middleware
 app.use(helmet());
@@ -69,19 +81,56 @@ app.get('/health', (req, res) => {
     message: 'SafaCycle Backend API is running',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
-    port: process.env.PORT || 5003
+    port: process.env.PORT || 5001,
+    services: {
+      database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+      webSocket: webSocketService.io ? 'Active' : 'Inactive',
+      connectedUsers: webSocketService.getConnectedUsers().length,
+      routeOptimization: 'Active',
+      realTimeTracking: 'Active',
+      advancedAnalytics: 'Active',
+      notificationService: 'Active'
+    },
+    endpoints: {
+      auth: '/api/auth',
+      users: '/api/users',
+      account: '/api/account',
+      vehicles: '/api/vehicles',
+      collections: '/api/collections',
+      analytics: '/api/analytics',
+      advancedAnalytics: '/api/advanced-analytics',
+      routeOptimization: '/api/route-optimization',
+      tracking: '/api/tracking',
+      customerTracking: '/api/customer-tracking',
+      notifications: '/api/notification-service'
+    }
   });
 });
 
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/vehicles', vehicleRoutes);
-app.use('/api/routes', routeRoutes);
+app.use('/api/account', accountRoutes);
 app.use('/api/collections', collectionRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/customer-tracking', customerTrackingRoutes);
+
+// Health check route
+app.use('/api/health', healthRoutes);
+
+// Advanced service routes
+app.use('/api/route-optimization', routeOptimizationRoutes);
+app.use('/api/tracking', trackingRoutes);
+app.use('/api/advanced-analytics', advancedAnalyticsRoutes);
+app.use('/api/notification-service', notificationServiceRoutes);
+
+// Test data routes (development only)
+if (process.env.NODE_ENV === 'development') {
+  app.use('/api/test', testDataRoutes);
+  app.use('/api/test-tracking', testTrackingRoutes);
+}
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -137,10 +186,18 @@ app.use((error, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 5003;
+const PORT = process.env.PORT || 5001;
 
-app.listen(PORT, () => {
+// Initialize WebSocket service
+const io = webSocketService.initialize(server);
+
+server.listen(PORT, () => {
   console.log(`🚀 SafaCycle Backend API running on port ${PORT}`);
   console.log(`📝 API Documentation: http://localhost:${PORT}/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+  console.log(`🔌 WebSocket server initialized`);
+  console.log(`📊 Advanced Analytics: http://localhost:${PORT}/api/advanced-analytics/operational-dashboard`);
+  console.log(`🚛 Route Optimization: http://localhost:${PORT}/api/route-optimization/optimize`);
+  console.log(`📍 Real-time Tracking: http://localhost:${PORT}/api/tracking/locations`);
+  console.log(`🔔 Notification Service: http://localhost:${PORT}/api/notification-service/send`);
 });

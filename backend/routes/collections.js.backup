@@ -1,0 +1,856 @@
+const express = require('express');
+const router = express.Router();
+const CollectionRequest = require('../models/CollectionRequest');
+const User = require('../models/User');
+const Vehicle = require('../models/Vehicle');
+const CustomerAnalytics = require('../models/CustomerAnalytics');
+const Notification = require('../models/Notification');
+const { auth, authorize, selfOrAdmin } = require('../middleware/auth');
+const { body, param, validationResult } = require('express-validator');
+
+// Validation middleware for collection requests
+const validateCollectionRequest = [
+  body('requestedDate')
+    .isISO8601()
+    .withMessage('Valid requested date is required')
+    .custom((value) => {
+      const requestedDate = new Date(value);
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      if (requestedDate < tomorrow) {
+        throw new Error('Requested date must be at least tomorrow');
+      }
+      return true;
+    }),
+  
+  body('requestedTime')
+    .isIn(['morning', 'afternoon', 'evening'])
+    .withMessage('Requested time must be morning, afternoon, or evening'),
+  
+  body('preferredTimeRange.start')
+    .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('Start time must be in HH:MM format'),
+  
+  body('preferredTimeRange.end')
+    .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('End time must be in HH:MM format'),
+  
+  body('wasteTypes')
+    .isArray({ min: 1 })
+    .withMessage('At least one waste type is required'),
+  
+  body('wasteTypes.*.category')
+    .isIn(['organic', 'recyclable', 'electronic', 'hazardous', 'general', 'plastic', 'paper', 'glass', 'metal'])
+    .withMessage('Invalid waste category'),
+  
+  body('wasteTypes.*.estimatedWeight')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Estimated weight must be a positive number'),
+  
+  body('pickupLocation.coordinates')
+    .isArray({ min: 2, max: 2 })
+    .withMessage('Pickup coordinates must be [longitude, latitude]'),
+  
+  body('pickupLocation.coordinates.*')
+    .isFloat()
+    .withMessage('Coordinates must be valid numbers'),
+  
+  body('address.street')
+    .notEmpty()
+    .withMessage('Street address is required'),
+  
+  body('address.city')
+    .notEmpty()
+    .withMessage('City is required'),
+  
+  body('address.state')
+    .notEmpty()
+    .withMessage('State is required'),
+  
+  body('address.zipCode')
+    .notEmpty()
+    .withMessage('Zip code is required')
+];
+
+// @route   POST /api/collections
+// @desc    Create new collection request
+// @route   POST /api/collections/test
+// @desc    Debug route to test authorization
+// @access  Private (Customer only)
+router.post('/test', auth, async (req, res) => {
+  // Manual role check for debugging
+  console.log('User object:', req.user);
+  console.log('User role:', req.user.role);
+  console.log('Role type:', typeof req.user.role);
+  
+  if (req.user.role !== 'customer') {
+    return res.status(403).json({
+      success: false,
+      message: `Access denied. Your role is: ${req.user.role}, expected: customer`
+    });
+  }
+  
+  res.json({
+    success: true,
+    message: 'Authorization works!',
+    user: {
+      id: req.user._id,
+      role: req.user.role,
+      name: req.user.name
+    }
+  });
+});
+
+// @route   POST /api/collections/test2  
+// @desc    Debug route to test authorize function
+// @access  Private (Customer only)
+router.post('/test2', [auth, authorize('customer')], async (req, res) => {
+  res.json({
+    success: true,
+    message: 'Authorize function works!',
+    user: {
+      id: req.user._id,
+      role: req.user.role,
+      name: req.user.name
+    }
+  });
+});
+router.post('/', [auth, authorize('customer'), ...validateCollectionRequest], async (req, res) => {
+  try {
+    // Check validation errors
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    // Create collection request
+    const collectionRequest = new CollectionRequest({
+      ...req.body,
+      customer: req.user._id
+    });
+
+    await collectionRequest.save();
+
+    // Update customer analytics
+    const analytics = await CustomerAnalytics.getOrCreate(req.user._id);
+    await analytics.addCollection({ status: 'pending' });
+
+    // Create notification for admin
+    await Notification.create({
+      recipient: await User.findOne({ role: 'admin' }).select('_id'),
+      recipientType: 'admin',
+      title: 'New Collection Request',
+      message: `${req.user.name} has requested a collection for ${collectionRequest.requestedDate.toDateString()}`,
+      type: 'pickup-scheduled',
+      category: 'info',
+      relatedCollectionRequest: collectionRequest._id,
+      relatedUser: req.user._id,
+      actionUrl: `/admin/collections/${collectionRequest._id}`,
+      actionLabel: 'Review Request'
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Collection request created successfully',
+      data: { collectionRequest }
+    });
+
+  } catch (error) {
+    console.error('Create collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   GET /api/collections
+// @desc    Get collection requests (customer: own requests, admin/driver: all)
+// @access  Private
+router.get('/', auth, async (req, res) => {
+  try {
+    const {
+      status,
+      page = 1,
+      limit = 10,
+      sortBy = '-requestedDate',
+      startDate,
+      endDate
+    } = req.query;
+
+    let filter = {};
+    
+    // Role-based filtering
+    if (req.user.role === 'customer') {
+      filter.customer = req.user._id;
+    } else if (req.user.role === 'driver') {
+      filter.assignedDriver = req.user._id;
+    }
+
+    // Status filtering
+    if (status) {
+      filter.status = status;
+    }
+
+    // Date range filtering
+    if (startDate || endDate) {
+      filter.requestedDate = {};
+      if (startDate) filter.requestedDate.$gte = new Date(startDate);
+      if (endDate) filter.requestedDate.$lte = new Date(endDate);
+    }
+
+    const collections = await CollectionRequest.find(filter)
+      .populate('customer', 'name email profile.phone')
+      .populate('assignedDriver', 'name email profile.phone')
+      .populate('assignedVehicle', 'plateNumber type')
+      .sort(sortBy)
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
+
+    const total = await CollectionRequest.countDocuments(filter);
+
+    res.json({
+      success: true,
+      data: {
+        collections,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+          totalItems: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get collection requests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching collection requests',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   GET /api/collections/upcoming
+// @desc    Get upcoming pickups for customer
+// @access  Private (Customer only)
+router.get('/upcoming', [auth, authorize('customer')], async (req, res) => {
+  try {
+    const upcomingPickups = await CollectionRequest.find({
+      customer: req.user._id,
+      status: { $in: ['pending', 'confirmed', 'assigned', 'in-progress'] },
+      requestedDate: { $gte: new Date() }
+    })
+    .populate('assignedDriver', 'name phone')
+    .populate('assignedVehicle', 'licensePlate model')
+    .sort('requestedDate')
+    .limit(10);
+
+    // Format the data to match frontend expectations
+    const formattedPickups = upcomingPickups.map(pickup => ({
+      _id: pickup._id,
+      id: pickup._id,
+      requestId: pickup.requestId,
+      requestedDate: pickup.requestedDate,
+      requestedTime: pickup.requestedTime,
+      preferredTimeRange: pickup.preferredTimeRange,
+      wasteTypes: pickup.wasteTypes,
+      totalEstimatedWeight: pickup.totalEstimatedWeight,
+      status: pickup.status,
+      assignedDriver: pickup.assignedDriver,
+      assignedVehicle: pickup.assignedVehicle,
+      address: pickup.address,
+      fullAddress: pickup.fullAddress,
+      timeUntilPickup: pickup.timeUntilPickup
+    }));
+
+    res.json({
+      success: true,
+      data: { collections: formattedPickups }
+    });
+
+  } catch (error) {
+    console.error('Get upcoming pickups error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching upcoming pickups',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   GET /api/collections/stats
+// @desc    Get collection statistics for customer
+// @access  Private (Customer only)
+router.get('/stats', [auth, authorize('customer')], async (req, res) => {
+  try {
+    const stats = await CollectionRequest.getCustomerStats(req.user._id);
+
+    res.json({
+      success: true,
+      data: { stats }
+    });
+
+  } catch (error) {
+    console.error('Get collection stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching collection statistics',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   GET /api/collections/:id
+// @desc    Get single collection request
+// @access  Private
+router.get('/:id', [
+  auth,
+  param('id').isMongoId().withMessage('Valid collection request ID is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid collection request ID',
+        errors: errors.array()
+      });
+    }
+
+    const collection = await CollectionRequest.findById(req.params.id)
+      .populate('customer', 'name email profile.phone')
+      .populate('assignedDriver', 'name email profile.phone')
+      .populate('assignedVehicle', 'plateNumber type model brand');
+
+    if (!collection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Collection request not found'
+      });
+    }
+
+    // Check access permissions
+    if (req.user.role === 'customer' && collection.customer._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only view your own collection requests.'
+      });
+    }
+
+    if (req.user.role === 'driver' && 
+        (!collection.assignedDriver || collection.assignedDriver._id.toString() !== req.user._id.toString())) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only view your assigned collection requests.'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { collection }
+    });
+
+  } catch (error) {
+    console.error('Get collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   PUT /api/collections/:id
+// @desc    Update collection request
+// @access  Private (Customer: own requests, Admin: all)
+router.put('/:id', [
+  auth,
+  param('id').isMongoId().withMessage('Valid collection request ID is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid collection request ID',
+        errors: errors.array()
+      });
+    }
+
+    const collection = await CollectionRequest.findById(req.params.id);
+
+    if (!collection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Collection request not found'
+      });
+    }
+
+    // Check permissions
+    if (req.user.role === 'customer') {
+      if (collection.customer.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only update your own collection requests.'
+        });
+      }
+
+      if (!collection.canBeModified()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Collection request cannot be modified in current status'
+        });
+      }
+    }
+
+    // Update allowed fields based on role
+    const allowedFields = req.user.role === 'admin' 
+      ? Object.keys(req.body)
+      : ['wasteTypes', 'customerNotes', 'preferredTimeRange'];
+
+    const updateData = {};
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    });
+
+    Object.assign(collection, updateData);
+    await collection.save();
+
+    res.json({
+      success: true,
+      message: 'Collection request updated successfully',
+      data: { collection }
+    });
+
+  } catch (error) {
+    console.error('Update collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   PUT /api/collections/:id/reschedule
+// @desc    Reschedule collection request
+// @access  Private (Customer: own requests, Admin: all)
+router.put('/:id/reschedule', [
+  auth,
+  param('id').isMongoId().withMessage('Valid collection request ID is required'),
+  body('requestedDate').isISO8601().withMessage('Valid new date is required'),
+  body('requestedTime').isIn(['morning', 'afternoon', 'evening']).withMessage('Valid new time is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const collection = await CollectionRequest.findById(req.params.id);
+
+    if (!collection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Collection request not found'
+      });
+    }
+
+    // Check permissions
+    if (req.user.role === 'customer' && collection.customer.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only reschedule your own collection requests.'
+      });
+    }
+
+    if (!collection.canBeModified()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Collection request cannot be rescheduled in current status'
+      });
+    }
+
+    const { requestedDate, requestedTime } = req.body;
+    
+    // Update the collection request
+    collection.requestedDate = new Date(requestedDate);
+    collection.requestedTime = requestedTime;
+    collection.status = 'pending'; // Reset to pending for admin review
+    
+    await collection.save();
+
+    // Create notification for admin
+    await Notification.create({
+      recipient: await User.findOne({ role: 'admin' }).select('_id'),
+      recipientType: 'admin',
+      title: 'Collection Rescheduled',
+      message: `Collection ${collection.requestId} has been rescheduled to ${new Date(requestedDate).toDateString()}`,
+      type: 'pickup-rescheduled',
+      category: 'info',
+      relatedCollectionRequest: collection._id,
+      relatedUser: req.user._id
+    });
+
+    res.json({
+      success: true,
+      message: 'Collection request rescheduled successfully',
+      data: { 
+        collectionRequest: collection
+      }
+    });
+
+  } catch (error) {
+    console.error('Reschedule collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error rescheduling collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   PUT /api/collections/:id/cancel
+// @desc    Cancel collection request
+// @access  Private (Customer: own requests, Admin: all)
+router.put('/:id/cancel', [
+  auth,
+  param('id').isMongoId().withMessage('Valid collection request ID is required'),
+  body('reason').optional().isString().withMessage('Cancellation reason must be a string')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const collection = await CollectionRequest.findById(req.params.id);
+
+    if (!collection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Collection request not found'
+      });
+    }
+
+    // Check permissions
+    if (req.user.role === 'customer' && collection.customer.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only cancel your own collection requests.'
+      });
+    }
+
+    if (!collection.canBeCancelled()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Collection request cannot be cancelled in current status'
+      });
+    }
+
+    const { reason } = req.body;
+    
+    // Update the collection request
+    collection.status = 'cancelled';
+    collection.cancellationReason = reason || 'No reason provided';
+    collection.cancelledAt = new Date();
+    collection.cancelledBy = req.user._id;
+    
+    await collection.save();
+
+    // Create notification for admin if cancelled by customer
+    if (req.user.role === 'customer') {
+      await Notification.create({
+        recipient: await User.findOne({ role: 'admin' }).select('_id'),
+        recipientType: 'admin',
+        title: 'Collection Cancelled',
+        message: `Collection ${collection.requestId} has been cancelled by customer. Reason: ${reason || 'No reason provided'}`,
+        type: 'pickup-cancelled',
+        category: 'warning',
+        relatedCollectionRequest: collection._id,
+        relatedUser: req.user._id
+      });
+    }
+
+    // Create notification for customer if cancelled by admin
+    if (req.user.role === 'admin') {
+      await Notification.create({
+        recipient: collection.customer,
+        recipientType: 'customer',
+        title: 'Collection Cancelled',
+        message: `Your collection ${collection.requestId} has been cancelled. Reason: ${reason || 'No reason provided'}`,
+        type: 'pickup-cancelled',
+        category: 'warning',
+        relatedCollectionRequest: collection._id
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Collection request cancelled successfully',
+      data: { 
+        collectionRequest: collection
+      }
+    });
+
+  } catch (error) {
+    console.error('Cancel collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error cancelling collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+module.exports = router;
+
+    if (!collection.canBeCancelled()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Collection request cannot be cancelled in current status'
+      });
+    }
+
+    collection.status = 'cancelled';
+    collection.cancellationReason = req.body.reason || 'Cancelled by customer';
+    await collection.save();
+
+    // Update analytics
+    const analytics = await CustomerAnalytics.getOrCreate(collection.customer);
+    await analytics.addCollection({ status: 'cancelled' });
+
+    // Send notification to driver if assigned
+    if (collection.assignedDriver) {
+      await Notification.create({
+        recipient: collection.assignedDriver,
+        recipientType: 'driver',
+        title: 'Collection Cancelled',
+        message: `Collection request ${collection.requestId} has been cancelled`,
+        type: 'pickup-cancelled',
+        category: 'warning',
+        relatedCollectionRequest: collection._id
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Collection request cancelled successfully',
+      data: { collection }
+    });
+
+  } catch (error) {
+    console.error('Cancel collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error cancelling collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   POST /api/collections/:id/assign
+// @desc    Assign collection request to driver (Admin only)
+// @access  Private (Admin only)
+router.post('/:id/assign', [
+  auth,
+  authorize('admin'),
+  param('id').isMongoId().withMessage('Valid collection request ID is required'),
+  body('driverId').isMongoId().withMessage('Valid driver ID is required'),
+  body('vehicleId').optional().isMongoId().withMessage('Valid vehicle ID is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const collection = await CollectionRequest.findById(req.params.id);
+
+    if (!collection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Collection request not found'
+      });
+    }
+
+    const { driverId, vehicleId } = req.body;
+
+    // Verify driver exists and is a driver
+    const driver = await User.findOne({ _id: driverId, role: 'driver' });
+    if (!driver) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid driver ID'
+      });
+    }
+
+    // Verify vehicle exists and is available
+    if (vehicleId) {
+      const vehicle = await Vehicle.findOne({ _id: vehicleId, isDeleted: false });
+      if (!vehicle) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid vehicle ID'
+        });
+      }
+    }
+
+    await collection.assignToDriver(driverId, vehicleId);
+
+    // Send notification to driver
+    await Notification.create({
+      recipient: driverId,
+      recipientType: 'driver',
+      title: 'New Collection Assignment',
+      message: `You have been assigned a collection request for ${collection.requestedDate.toDateString()}`,
+      type: 'driver-assigned',
+      category: 'info',
+      relatedCollectionRequest: collection._id,
+      actionUrl: `/driver/collections/${collection._id}`,
+      actionLabel: 'View Details'
+    });
+
+    // Send notification to customer
+    await Notification.create({
+      recipient: collection.customer,
+      recipientType: 'customer',
+      title: 'Driver Assigned',
+      message: `${driver.name} has been assigned to your collection request`,
+      type: 'driver-assigned',
+      category: 'success',
+      relatedCollectionRequest: collection._id,
+      relatedUser: driverId
+    });
+
+    const updatedCollection = await CollectionRequest.findById(collection._id)
+      .populate('assignedDriver', 'name email profile.phone')
+      .populate('assignedVehicle', 'plateNumber type');
+
+    res.json({
+      success: true,
+      message: 'Collection request assigned successfully',
+      data: { collection: updatedCollection }
+    });
+
+  } catch (error) {
+    console.error('Assign collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error assigning collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   POST /api/collections/:id/complete
+// @desc    Mark collection as completed (Driver only)
+// @access  Private (Driver/Admin)
+router.post('/:id/complete', [
+  auth,
+  authorize(['driver', 'admin']),
+  param('id').isMongoId().withMessage('Valid collection request ID is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const collection = await CollectionRequest.findById(req.params.id);
+
+    if (!collection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Collection request not found'
+      });
+    }
+
+    // Check if driver is assigned to this collection
+    if (req.user.role === 'driver' && 
+        (!collection.assignedDriver || collection.assignedDriver.toString() !== req.user._id.toString())) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only complete your assigned collections.'
+      });
+    }
+
+    await collection.markCompleted(req.body);
+
+    // Update customer analytics
+    const analytics = await CustomerAnalytics.getOrCreate(collection.customer);
+    await analytics.addCollection({
+      status: 'completed',
+      weight: collection.totalWeightCollected,
+      rating: req.body.rating
+    });
+
+    // Add waste categories to analytics
+    if (collection.actualWasteCollected) {
+      for (const waste of collection.actualWasteCollected) {
+        await analytics.addWasteCategory(waste.category, waste.weight);
+      }
+    }
+
+    // Calculate environmental impact
+    await analytics.calculateEnvironmentalImpact();
+
+    // Send notification to customer
+    await Notification.create({
+      recipient: collection.customer,
+      recipientType: 'customer',
+      title: 'Collection Completed',
+      message: `Your waste collection has been completed successfully`,
+      type: 'pickup-completed',
+      category: 'success',
+      relatedCollectionRequest: collection._id,
+      actionUrl: `/customer/collections/${collection._id}`,
+      actionLabel: 'View Details'
+    });
+
+    res.json({
+      success: true,
+      message: 'Collection marked as completed successfully',
+      data: { collection }
+    });
+
+  } catch (error) {
+    console.error('Complete collection request error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error completing collection request',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+module.exports = router;
