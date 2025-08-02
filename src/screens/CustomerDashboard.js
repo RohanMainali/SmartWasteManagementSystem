@@ -94,16 +94,6 @@ export default function CustomerDashboard({ navigation }) {
       console.error('Dashboard loading error:', error);
       setError('Failed to load dashboard data');
       // Set dummy data on error as well
-      setUpcomingPickups([{
-        id: 'dummy-1',
-        requestId: 'REQ-001',
-        date: 'January 8, 2025',
-        time: '8:45 AM',
-        type: 'General Waste',
-        status: 'confirmed',
-        wasteTypes: [{ category: 'general', description: 'General Waste' }],
-        address: { street: 'Sample Street', city: 'Kathmandu' }
-      }]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -171,13 +161,6 @@ export default function CustomerDashboard({ navigation }) {
       description: "Manage alerts",
       icon: "🔔",
       action: "notifications",
-    },
-    {
-      id: 7,
-      title: "Eco Insights",
-      description: "View your impact",
-      icon: "📊",
-      action: "insights",
     },
   ];
 
